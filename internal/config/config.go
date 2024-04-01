@@ -32,9 +32,9 @@ func LoadConfig(configPaths ...string) (*AppConfig, error) {
 	viper.SetConfigType("yaml") // Тип файла конфигурации (yaml, json...)
 
 	// Установка значений по умолчанию
-	viper.SetDefault("database.host", "localhost")
+	viper.SetDefault("database.host", "0.0.0.0")
 	viper.SetDefault("database.port", 5432)
-	viper.SetDefault("nats.url", "nats://localhost:4222")
+	viper.SetDefault("nats.url", "0.0.0.0:4222")
 
 	// Добавление путей поиска файла конфигурации
 	for _, path := range configPaths {
