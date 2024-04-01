@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/ArtemZ007/internal/model"
+	"github.com/ArtemZ007/wb-l0/internal/model"
 )
 
 // Cache структура для кэша в памяти

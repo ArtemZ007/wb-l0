@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/ArtemZ007/api"
-	"github.com/ArtemZ007/cache"
-	"github.com/ArtemZ007/db"
-	"github.com/ArtemZ007/nats"
+	"github.com/ArtemZ007/wb-l0/internal/api"
+	"github.com/ArtemZ007/wb-l0/internal/cache"
+	"github.com/ArtemZ007/wb-l0/internal/db"
+	"github.com/ArtemZ007/wb-l0/internal/nats"
 )
 
 func main() {

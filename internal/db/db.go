@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/ArtemZ007/internal/model"
+	"github.com/ArtemZ007/wb-l0/internal/model"
 	// PostgreSQL driver
 )
 

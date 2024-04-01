@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ArtemZ007/cache"
-	"github.com/ArtemZ007/model"
+	"github.com/ArtemZ007/wb-l0/internal/cache"
+	"github.com/ArtemZ007/wb-l0/internal/model"
 )
 
 // Handler структура для HTTP-обработчиков с ссылкой на кэш
