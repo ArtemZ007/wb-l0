@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/ArtemZ007/wb-l0/internal/api"
 	"github.com/ArtemZ007/wb-l0/internal/cache"
@@ -21,7 +22,12 @@ func main() {
 	natsURL := os.Getenv("NATS_URL")
 
 	// Подключение к базе данных
-	database, err := db.Connect(dbHost, dbPort, dbUser, dbPassword, dbName)
+	dbPortInt, err := strconv.Atoi(dbPort)
+	if err != nil {
+		log.Fatal(err)
+	}
+	dbConf := db.NewDBConfig(dbHost, dbPortInt, dbUser, dbPassword, dbName)
+	database, err := db.Connect(dbConf)
 	if err != nil {
 		log.Fatalf("Failed to connect to the database: %v", err)
 	}
@@ -35,14 +41,19 @@ func main() {
 	}
 
 	// Подключение к NATS Streaming
-	natsConn, err := nats.Connect(natsURL)
+	natsConfig := nats.NATSConfig{
+		URL:       natsURL,
+		ClientID:  os.Getenv("NATS_CLIENT_ID"),
+		ClusterID: os.Getenv("NATS_CLUSTER_ID"),
+	}
+	natsConn, err := nats.Connect(&natsConfig)
 	if err != nil {
 		log.Fatalf("Failed to connect to NATS Streaming: %v", err)
 	}
 	defer natsConn.Close()
 
 	// Подписка на канал NATS и обработка сообщений
-	err = nats.Subscribe(natsConn, database, c)
+	s, err := nats.Subscribe(natsConn, "", "")
 	if err != nil {
 		log.Fatalf("Failed to subscribe to NATS channel: %v", err)
 	}

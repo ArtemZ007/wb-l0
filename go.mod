@@ -1,4 +1,4 @@
-module wb-l0
+module github.com/ArtemZ007/wb-l0
 
 go 1.22.1
 
