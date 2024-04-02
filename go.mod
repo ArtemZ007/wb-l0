@@ -3,6 +3,7 @@ module github.com/ArtemZ007/wb-l0
 go 1.22.1
 
 require (
+	github.com/lib/pq v1.10.9
 	github.com/nats-io/stan.go v0.10.4
 	github.com/spf13/viper v1.18.2
 )
@@ -11,6 +12,7 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/klauspost/compress v1.17.7 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect

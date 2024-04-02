@@ -12,10 +12,15 @@ import (
 	"github.com/ArtemZ007/wb-l0/internal/db"
 	"github.com/ArtemZ007/wb-l0/internal/model"
 	"github.com/ArtemZ007/wb-l0/internal/nats"
+	"github.com/joho/godotenv"
 	"github.com/nats-io/stan.go"
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
 	// Загрузка конфигурации из переменных окружения
 	dbHost := os.Getenv("DB_HOST")
 	dbPort := os.Getenv("DB_PORT")
@@ -24,7 +29,7 @@ func main() {
 	dbName := os.Getenv("DB_NAME")
 	natsURL := os.Getenv("NATS_URL")
 
-	// Подключение к базе данных
+	//Подключение к базе данных
 	dbPortInt, err := strconv.Atoi(dbPort)
 	if err != nil {
 		log.Fatal(err)

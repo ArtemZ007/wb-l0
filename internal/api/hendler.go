@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/ArtemZ007/wb-l0/internal/cache"
@@ -35,13 +34,13 @@ func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Преобразование orderID из строки в int
-	orderID, err := strconv.Atoi(orderIDStr)
-	if err != nil {
-		http.Error(w, "Invalid order ID format", http.StatusBadRequest)
-		return
-	}
+	// orderID, err := orderIDStr
+	// if err != nil {
+	// 	http.Error(w, "Invalid order ID format", http.StatusBadRequest)
+	// 	return
+	// }
 
-	order, found := h.Cache.GetOrder(orderID)
+	order, found := h.Cache.GetOrder(orderIDStr)
 	if !found {
 		http.Error(w, "Order not found", http.StatusNotFound)
 		return
@@ -73,11 +72,11 @@ func (h *Handler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Преобразование orderID из строки в int
-	orderID, err := strconv.Atoi(orderIDStr)
-	if err != nil {
-		http.Error(w, "Invalid order ID format", http.StatusBadRequest)
-		return
-	}
+	// orderID, err := strconv.Atoi(orderIDStr)
+	// if err != nil {
+	// 	http.Error(w, "Invalid order ID format", http.StatusBadRequest)
+	// 	return
+	// }
 
 	var order model.Order
 	if err := json.NewDecoder(r.Body).Decode(&order); err != nil {
@@ -85,7 +84,7 @@ func (h *Handler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Cache.UpdateOrder(orderID, &order); err != nil {
+	if err := h.Cache.UpdateOrder(orderIDStr, &order); err != nil {
 		http.Error(w, "Failed to update order", http.StatusInternalServerError)
 		return
 	}

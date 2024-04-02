@@ -1,5 +1,5 @@
 /app.yaml
-/compose-dev.yaml
+#/compose-dev.yaml
 /env
-/tabnine_root
-/gitignore
+/.tabnine_root
+#/Dockerfile

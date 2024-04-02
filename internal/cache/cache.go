@@ -12,13 +12,13 @@ import (
 // Cache структура для кэша в памяти
 type Cache struct {
 	mu     sync.RWMutex
-	orders map[int]*model.Order
+	orders map[string]*model.Order
 }
 
 // New создает новый экземпляр кэша
 func New() *Cache {
 	return &Cache{
-		orders: make(map[int]*model.Order),
+		orders: make(map[string]*model.Order),
 	}
 }
 
@@ -35,11 +35,11 @@ func (c *Cache) LoadFromDB(db *sql.DB) error {
 
 	for rows.Next() {
 		var order model.Order
-		if err := rows.Scan(&order.ID, &order.CustomerName, &order.Price); err != nil {
+		if err := rows.Scan(&order.OrderUID); err != nil {
 			log.Printf("Failed to load order from DB: %v", err)
 			continue // или return err, если хотите прервать загрузку при первой ошибке
 		}
-		c.orders[order.ID] = &order
+		c.orders[order.OrderUID] = &order
 	}
 
 	if err := rows.Err(); err != nil {
@@ -50,7 +50,7 @@ func (c *Cache) LoadFromDB(db *sql.DB) error {
 }
 
 // GetOrder возвращает заказ по ID из кэша
-func (c *Cache) GetOrder(id int) (*model.Order, bool) {
+func (c *Cache) GetOrder(id string) (*model.Order, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -59,7 +59,7 @@ func (c *Cache) GetOrder(id int) (*model.Order, bool) {
 }
 
 // UpdateOrder обновляет заказ в кэше
-func (c *Cache) UpdateOrder(id int, order *model.Order) error {
+func (c *Cache) UpdateOrder(id string, order *model.Order) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -76,5 +76,5 @@ func (c *Cache) AddOrder(order *model.Order) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.orders[order.ID] = order
+	c.orders[order.OrderUID] = order
 }
