@@ -3,6 +3,7 @@ package cache
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"sync"
 
 	"github.com/ArtemZ007/wb-l0/internal/model"
@@ -26,8 +27,24 @@ func (c *Cache) LoadFromDB(db *sql.DB) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Здесь должен быть код для загрузки данных из БД в кэш
-	// Пример: SELECT * FROM orders и заполнение c.orders
+	rows, err := db.Query("SELECT id, customer_name, price FROM orders")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var order model.Order
+		if err := rows.Scan(&order.ID, &order.CustomerName, &order.Price); err != nil {
+			log.Printf("Failed to load order from DB: %v", err)
+			continue // или return err, если хотите прервать загрузку при первой ошибке
+		}
+		c.orders[order.ID] = &order
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -50,7 +67,6 @@ func (c *Cache) UpdateOrder(id int, order *model.Order) error {
 		return errors.New("order not found")
 	}
 
-	// Обновление информации о заказе
 	c.orders[id] = order
 	return nil
 }

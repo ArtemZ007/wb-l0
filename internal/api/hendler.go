@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/ArtemZ007/wb-l0/internal/cache"
@@ -21,17 +23,30 @@ func NewHandler(c *cache.Cache) *Handler {
 
 // GetOrder обрабатывает запросы на получение заказа по ID
 func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
-	// Извлечение ID заказа из URL
-	orderID := strings.TrimPrefix(r.URL.Path, "/orders/")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-	// Поиск заказа в кэше
+	orderIDStr := strings.TrimPrefix(r.URL.Path, "/orders/")
+	if orderIDStr == "" {
+		http.Error(w, "Order ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Преобразование orderID из строки в int
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		http.Error(w, "Invalid order ID format", http.StatusBadRequest)
+		return
+	}
+
 	order, found := h.Cache.GetOrder(orderID)
 	if !found {
 		http.Error(w, "Order not found", http.StatusNotFound)
 		return
 	}
 
-	// Возврат заказа в ответе
 	response, err := json.Marshal(order)
 	if err != nil {
 		http.Error(w, "Failed to marshal order", http.StatusInternalServerError)
@@ -39,22 +54,37 @@ func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(response)
+	if _, err := w.Write(response); err != nil {
+		log.Printf("Failed to write response: %v", err)
+	}
 }
 
 // UpdateOrder обрабатывает запросы на обновление заказа
 func (h *Handler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
-	// Извлечение ID заказа из URL
-	orderID := strings.TrimPrefix(r.URL.Path, "/orders/")
+	if r.Method != http.MethodPost { // Или http.MethodPut, если вы предпочитаете использовать PUT для обновлений
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-	// Декодирование полученного заказа из запроса
+	orderIDStr := strings.TrimPrefix(r.URL.Path, "/orders/update/")
+	if orderIDStr == "" {
+		http.Error(w, "Order ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Преобразование orderID из строки в int
+	orderID, err := strconv.Atoi(orderIDStr)
+	if err != nil {
+		http.Error(w, "Invalid order ID format", http.StatusBadRequest)
+		return
+	}
+
 	var order model.Order
 	if err := json.NewDecoder(r.Body).Decode(&order); err != nil {
 		http.Error(w, "Invalid order data", http.StatusBadRequest)
 		return
 	}
 
-	// Обновление заказа в кэше и базе данных
 	if err := h.Cache.UpdateOrder(orderID, &order); err != nil {
 		http.Error(w, "Failed to update order", http.StatusInternalServerError)
 		return
@@ -65,6 +95,11 @@ func (h *Handler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 
 // RegisterRoutes регистрирует маршруты для обработчиков
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/orders/", h.GetOrder)
-	mux.HandleFunc("/orders/update/", h.UpdateOrder)
+	mux.HandleFunc("/orders/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/update/") {
+			h.UpdateOrder(w, r)
+		} else {
+			h.GetOrder(w, r)
+		}
+	})
 }

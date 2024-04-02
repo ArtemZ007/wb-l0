@@ -2,11 +2,12 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 
-	model "github.com/ArtemZ007/wb-l0/internal/model"
-	// PostgreSQL driver
+	"github.com/ArtemZ007/wb-l0/internal/model"
+	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
 // DBConfig структура для конфигурации подключения к базе данных
@@ -49,24 +50,33 @@ func Connect(cfg *DBConfig) (*sql.DB, error) {
 }
 
 // GetOrderByID извлекает заказ из базы данных по ID
-func GetOrderByID(db *sql.DB, id int) (*model.Order, error) {
+func GetOrderByID(db *sql.DB, id string) (*model.Order, error) {
 	var order model.Order
-	query := `SELECT id, product, quantity FROM orders WHERE id = $1`
+	query := `SELECT order_uid, track_number, entry, delivery, payment, items, locale, internal_signature, customer_id, delivery_service, shardkey, sm_id, date_created, oof_shard FROM orders WHERE order_uid = $1`
 	row := db.QueryRow(query, id)
 
-	if err := row.Scan(&order.ID, &order.Product, &order.Quantity); err != nil {
+	var delivery, payment, items string
+	if err := row.Scan(&order.OrderUID, &order.TrackNumber, &order.Entry, &delivery, &payment, &items, &order.Locale, &order.InternalSignature, &order.CustomerID, &order.DeliveryService, &order.Shardkey, &order.SMID, &order.DateCreated, &order.OofShard); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no order with id %d", id)
+			return nil, fmt.Errorf("no order with id %s", id)
 		}
+		return nil, err
+	}
+
+	// Десериализация JSON-строк в соответствующие поля
+	if err := json.Unmarshal([]byte(delivery), &order.Delivery); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(payment), &order.Payment); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(items), &order.Items); err != nil {
 		return nil, err
 	}
 
 	return &order, nil
 }
 
-// UpdateOrder обновляет информацию о заказе в базе данных
-func UpdateOrder(db *sql.DB, order *model.Order) error {
-	query := `UPDATE orders SET product = $1, quantity = $2 WHERE id = $3`
-	_, err := db.Exec(query, order.Product, order.Quantity, order.ID)
-	return err
-}
+// Поскольку структура Order содержит сложные типы данных, обновление заказа потребует специфической логики,
+// зависящей от того, как именно вы хотите обновлять эти данные в вашей базе данных.
+// Пример функции UpdateOrder опустим, так как он требует детального понимания вашей бизнес-логики и структуры базы данных.

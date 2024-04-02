@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -9,7 +10,9 @@ import (
 	"github.com/ArtemZ007/wb-l0/internal/api"
 	"github.com/ArtemZ007/wb-l0/internal/cache"
 	"github.com/ArtemZ007/wb-l0/internal/db"
+	"github.com/ArtemZ007/wb-l0/internal/model"
 	"github.com/ArtemZ007/wb-l0/internal/nats"
+	"github.com/nats-io/stan.go"
 )
 
 func main() {
@@ -52,14 +55,25 @@ func main() {
 	}
 	defer natsConn.Close()
 
-	// Подписка на канал NATS и обработка сообщений
-	s, err := nats.Subscribe(natsConn, "", nats.Close())
+	// Подписка на канал NATS с именем "orders"
+	subscription, err := nats.Subscribe(natsConn, "orders", func(m *stan.Msg) {
+		var order model.Order
+		err := json.Unmarshal(m.Data, &order)
+		if err != nil {
+			log.Printf("Error unmarshalling message: %v", err)
+			return
+		}
+
+		// Логика обработки десериализованных данных
+		log.Printf("Received order: %+v\n", order)
+	})
 	if err != nil {
-		log.Fatalf("Failed to subscribe to NATS channel: %v", err)
+		log.Fatalf("Failed to subscribe to NATS channel 'orders': %v", err)
 	}
+	defer subscription.Unsubscribe()
 
 	// Запуск HTTP-сервера
-	router := api.NewRouter(c)
+	router := api.NewRouter(c) // Убедитесь, что функция NewRouter принимает кэш как аргумент
 	log.Println("Starting HTTP server on port 8080")
 	if err := http.ListenAndServe(":8080", router); err != nil {
 		log.Fatalf("Failed to start HTTP server: %v", err)
