@@ -53,7 +53,7 @@ func main() {
 	defer natsConn.Close()
 
 	// Подписка на канал NATS и обработка сообщений
-	s, err := nats.Subscribe(natsConn, "", "")
+	s, err := nats.Subscribe(natsConn, "", nats.Close())
 	if err != nil {
 		log.Fatalf("Failed to subscribe to NATS channel: %v", err)
 	}
