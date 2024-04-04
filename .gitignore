@@ -1,5 +1,8 @@
-/app.yaml
-#/compose-dev.yaml
-/env
-/tabnine_root
-#/Dockerfile
+# Игнорировать файлы с переменными окружения
+.env
+
+# Игнорировать файлы, связанные с автодополнением TabNine
+.tabnine_root
+
+# Игнорировать файл конфигурации
+app.yaml
