@@ -58,8 +58,8 @@ func main() {
 	// 	//ClusterID: os.Getenv("NATS_CLUSTER_ID"),
 	// }
 	natsConn, err := nats.Connect()
+	log.Println("Conecting to NATS Streaming: done")
 	if err != nil {
-		log.Println("Conecting to NATS Streaming: done")
 		log.Fatalf("Failed to connect to NATS Streaming: %v", err)
 	}
 	defer natsConn.Close()
