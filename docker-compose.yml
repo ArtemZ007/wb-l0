@@ -1,18 +1,5 @@
 version: '3.9'
 services:
-  app_1:
-    image: golang:alpine
-    container_name: app
-   # volumes:
-      #- C:\Users\Admin\wb-l0\cmd\:/app
-    #working_dir: /app
-    build:
-     dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    depends_on:
-      - db
-      - nats
 
   db:
     image: postgres:alpine

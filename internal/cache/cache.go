@@ -27,7 +27,7 @@ func (c *Cache) LoadFromDB(db *sql.DB) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	rows, err := db.Query("SELECT id, customer_name, price FROM orders")
+	rows, err := db.Query("SELECT order_uid, customer_id FROM orders")
 	if err != nil {
 		return err
 	}

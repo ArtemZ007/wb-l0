@@ -20,13 +20,13 @@ type DBConfig struct {
 }
 
 // NewDBConfig создает новый экземпляр конфигурации базы данных
-func NewDBConfig(host string, port int, user, password, dbname string) *DBConfig {
+func NewDBConfig(host string, port int, user, password, db string) *DBConfig {
 	return &DBConfig{
 		Host:     host,
 		Port:     port,
 		User:     user,
 		Password: password,
-		DBName:   dbname,
+		DBName:   db,
 	}
 }
 
