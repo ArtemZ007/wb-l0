@@ -1,0 +1,18 @@
+version: '3.9'
+services:
+
+  db:
+    image: postgres:alpine
+    environment:
+      POSTGRES_DB: db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432" # Открываем порт для подключения с машины хоста
+
+  nats:
+    image: nats-streaming:alpine # Используем NATS Streaming Server на Alpine
+    ports:
+      - 4222:4222
+      - 8222:8222
+      - 6222:6222
