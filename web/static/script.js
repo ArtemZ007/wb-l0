@@ -1,56 +1,68 @@
-// Слушатель события загрузки DOM.
 document.addEventListener('DOMContentLoaded', async function() {
-    // Попытка инициализации particles.js.
+    // Инициализация particles.js с учетом кэширования.
     try {
-        // Загрузка конфигурации particles.js из файла particles.json.
-        // Убедитесь, что файл particles.json находится в доступном месте относительно HTML-файла.
-        particlesJS.load('particles-js', 'particles.json', function() {
+        particlesJS.load('particles-js', 'particles.json?cacheBuster=' + new Date().getTime(), function() {
             console.log('callback - Конфигурация particles.js успешно загружена.');
         });
     } catch (error) {
-        // Логирование ошибки, если конфигурация не может быть загружена.
         console.error('Ошибка при загрузке конфигурации particles.js:', error);
     }
 
-    // Получение элемента формы и кнопки отправки.
     const form = document.getElementById('uidForm');
+    const resultContainer = document.getElementById('result');
     const submitButton = form.querySelector('button[type="submit"]');
-    // Сохранение оригинального текста кнопки для последующего восстановления.
     const originalButtonText = submitButton.textContent;
 
-    // Обработчик события отправки формы.
-    form.addEventListener('submit', async function(e) {
-        e.preventDefault(); // Предотвращение стандартного поведения формы.
+    function validateFormData(formData) {
+        const hashUID = formData.get('hash_uid').trim();
+        if (!hashUID) {
+            alert('Пожалуйста, заполните все необходимые поля.');
+            return false;
+        }
+        return true;
+    }
 
-        // Изменение текста кнопки на время отправки и её отключение.
-        submitButton.textContent = 'Отправка...';
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        // Анимация кнопки
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Отправка...';
         submitButton.disabled = true;
 
-        // Создание объекта FormData из формы для отправки.
         const formData = new FormData(form);
 
+        if (!validateFormData(formData)) {
+            submitButton.innerHTML = originalButtonText;
+            submitButton.disabled = false;
+            return;
+        }
+
+        const hashUID = formData.get('hash_uid').trim();
+
         try {
-            // Отправка данных формы на сервер методом POST.
-            const response = await fetch(form.action, {
-                method: 'POST',
-                body: formData
+            const response = await fetch(`/api/orders/${hashUID}`, {
+                method: 'GET',
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
             });
 
-            // Проверка статуса ответа от сервера.
             if (response.ok) {
-                console.log('Данные формы успешно отправлены.');
-                alert('Данные успешно отправлены!');
+                const data = await response.json();
+                resultContainer.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                $(resultContainer).fadeIn().delay(5000).fadeOut();
+            } else if (response.status === 404) {
+                resultContainer.textContent = "Неверный UID";
+                $(resultContainer).fadeIn().delay(5000).fadeOut();
             } else {
-                console.error('Ошибка при отправке данных формы. Статус ответа:', response.status);
-                alert('Не удалось отправить данные.');
+                throw new Error('Произошла ошибка при запросе');
             }
         } catch (error) {
-            // Логирование ошибки при отправке данных.
-            console.error('Ошибка при отправке данных формы:', error);
-            alert('Произошла ошибка при отправке. Пожалуйста, попробуйте снова.');
+            console.error('Ошибка:', error);
+            resultContainer.textContent = "Произошла ошибка при запросе";
+            $(resultContainer).fadeIn().delay(5000).fadeOut();
         } finally {
-            // Восстановление оригинального текста кнопки и её активации после отправки.
-            submitButton.textContent = originalButtonText;
+            submitButton.innerHTML = originalButtonText;
             submitButton.disabled = false;
         }
     });

@@ -6,6 +6,19 @@
     <meta name="description" content="Страница для отправки UID. Введите ваш UID для продолжения.">
     <title>Отправка UID</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Пример стилей для класса visually-hidden */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            margin: -1px;
+            padding: 0;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+        }
+    </style>
 </head>
 <body>
     <div id="particles-js"></div>
@@ -13,11 +26,14 @@
         <h1>Пожалуйста, введите значение UID...</h1>
         <form action="/" method="post" id="uidForm">
             <label for="hash_uid" class="visually-hidden">Hash UID</label>
-            <input type="text" id="hash_uid" name="hash_uid" placeholder="Введите hash_uid" class="input-field" aria-label="Введите ваш Hash UID"><br>
+            <input type="text" id="hash_uid" name="hash_uid" placeholder="Введите hash_uid" class="input-field" aria-label="Введите ваш Hash UID" required><br>
             <button type="submit" class="submit-btn">Отправить</button>
         </form>
+        <div id="result" class="result-container">
+            <!-- Здесь будут отображаться результаты -->
+        </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/particles.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

@@ -1,85 +1,71 @@
 package nats
 
 import (
+	"encoding/json"
 	"time"
 
-	"github.com/nats-io/nats.go"
+	"github.com/ArtemZ007/wb-l0/internal/cache"
+	"github.com/ArtemZ007/wb-l0/internal/model"
 	"github.com/nats-io/stan.go"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
-// NatsConnection структура для управления соединением с NATS.
-type NatsConnection struct {
-	*nats.Conn
-}
-
-// NATSConfig представляет конфигурацию для подключения к NATS Streaming.
-type NATSConfig struct {
-	ClusterID string // Идентификатор кластера NATS Streaming
-	ClientID  string // Уникальный идентификатор клиента в рамках кластера
-	URL       string // URL для подключения к NATS
-}
-
-// SubscriptionConfig представляет конфигурацию для подписки.
+// SubscriptionConfig содержит конфигурационные параметры для подписки в NATS Streaming.
 type SubscriptionConfig struct {
-	DurableName string
-	AckWait     time.Duration
+	DurableName string        // DurableName - постоянное имя для подписки.
+	AckWait     time.Duration // AckWait - время ожидания перед подтверждением сообщения.
 }
 
-// Connect устанавливает соединение с NATS сервером и возвращает экземпляр NatsConnection или ошибку.
-func Connect(cfg NATSConfig) (*NatsConnection, error) {
-	nc, err := nats.Connect(cfg.URL)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to connect to NATS")
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"url": cfg.URL,
-	}).Info("Successfully connected to NATS")
-
-	return &NatsConnection{nc}, nil
-}
-
-// Close закрывает соединение с NATS сервером. Безопасно вызывается даже если соединение уже закрыто.
-func (nc *NatsConnection) Close() {
-	if nc.Conn != nil {
-		nc.Conn.Close()
-		logrus.Info("NATS connection closed")
-	}
-}
-
-// ConnectToNATSStreaming создает подключение к NATS Streaming и возвращает соединение или ошибку.
-func ConnectToNATSStreaming(cfg NATSConfig) (stan.Conn, error) {
-	sc, err := stan.Connect(cfg.ClusterID, cfg.ClientID, stan.NatsURL(cfg.URL))
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to connect to NATS Streaming")
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"clusterID": cfg.ClusterID,
-		"clientID":  cfg.ClientID,
-		"url":       cfg.URL,
-	}).Info("Successfully connected to NATS Streaming")
-
-	return sc, nil
-}
-
-// Subscribe подписывается на тему и обрабатывает сообщения через NATS Streaming. Возвращает подписку и ошибку.
-func Subscribe(sc stan.Conn, subject string, cb stan.MsgHandler, subCfg SubscriptionConfig) (stan.Subscription, error) {
+// Subscribe подписывается на тему и обрабатывает сообщения через NATS Streaming.
+// Возвращает подписку и ошибку. Функция принимает экземпляр cacheService для сохранения заказов в кэш.
+func Subscribe(sc stan.Conn, subject string, subCfg SubscriptionConfig, cacheService *cache.Cache) (stan.Subscription, error) {
 	options := []stan.SubscriptionOption{
-		stan.DurableName(subCfg.DurableName),
-		stan.AckWait(subCfg.AckWait),
+		stan.DurableName(subCfg.DurableName), // Устанавливаем постоянное имя для подписки, чтобы не терять сообщения при перезапуске.
+		stan.AckWait(subCfg.AckWait),         // Устанавливаем время ожидания подтверждения сообщения.
 	}
 
-	sub, err := sc.Subscribe(subject, cb, options...)
+	// Подписываемся на тему с заданными параметрами.
+	sub, err := sc.Subscribe(subject, func(msg *stan.Msg) {
+		var order model.Order
+		// Десериализуем сообщение в структуру Order.
+		if err := json.Unmarshal(msg.Data, &order); err != nil {
+			logrus.WithError(err).Error("Ошибка десериализации заказа")
+			return
+		}
+
+		// Логируем получение нового заказа.
+		logrus.WithFields(logrus.Fields{
+			"orderUID":     order.OrderUID,
+			"trackNumber":  order.TrackNumber,
+			"customerID":   order.CustomerID,
+			"dateCreated":  order.DateCreated,
+			"deliveryCity": order.Delivery.City,
+		}).Info("Новый заказ получен")
+
+		// Проверяем, существует ли заказ в кэше.
+		if _, found := cacheService.GetOrder(order.OrderUID); !found {
+			// Если заказа нет в кэше, добавляем его.
+			cacheService.AddOrder(&order) // Предполагается, что метод AddOrder обновлен и теперь не возвращает ошибку.
+			logrus.WithFields(logrus.Fields{"orderUID": order.OrderUID}).Info("Заказ добавлен в кэш")
+		} else {
+			// Если заказ уже существует в кэше, логируем это.
+			logrus.WithFields(logrus.Fields{"orderUID": order.OrderUID}).Info("Заказ уже существует в кэше")
+		}
+
+		// Подтверждаем обработку сообщения.
+		if err := msg.Ack(); err != nil {
+			logrus.WithError(err).Error("Ошибка подтверждения сообщения")
+		}
+	}, options...)
+
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to subscribe to subject")
+		return nil, err // Возвращаем ошибку без обертки, чтобы сохранить оригинальный тип ошибки.
 	}
+
 	logrus.WithFields(logrus.Fields{
 		"subject":     subject,
 		"durableName": subCfg.DurableName,
-	}).Info("Subscribed to subject with durable name")
+	}).Info("Успешная подписка на тему")
 
 	return sub, nil
 }

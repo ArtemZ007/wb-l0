@@ -1,46 +1,53 @@
 body, html {
     height: 100%;
     margin: 0;
-    background-color: #333;
-    color: #fff;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #263238; /* Обновленный цвет фона для соответствия Material Design */
+    color: #ECEFF1; /* Цвет текста для лучшего контраста на темном фоне */
+    font-family: 'Roboto', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Шрифт Roboto, рекомендуемый Material Design */
 }
 
 .container {
-    position: relative;
-    z-index: 1;
-    text-align: center;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    position: relative; /* Добавлено для управления позиционированием относительно абсолютно позиционированных дочерних элементов */
+    z-index: 2; /* Убедитесь, что контейнер и его содержимое находятся выше фона с частицами */
+}
+
+.form-wrapper {
+    background-color: #37474F; /* Фоновый цвет формы */
+    padding: 20px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3); /* Улучшенная тень для глубины */
     width: 90%;
-    max-width: 600px; /* Ограничение максимальной ширины для улучшения читаемости на больших экранах */
+    max-width: 320px; /* Оптимальная ширина для мобильных и десктопных устройств */
 }
 
 .input-field, .submit-btn {
     margin: 10px 0;
-    padding: 10px;
+    padding: 12px 20px; /* Увеличенный padding для большего комфорта */
     border: none;
     border-radius: 4px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    width: 100%; /* Улучшение адаптивности */
+    width: calc(100% - 40px); /* Вычитание padding из ширины */
 }
 
-.input-field:focus, .submit-btn:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px #4CAF50; /* Улучшение визуального отклика при фокусировке */
+.input-field {
+    background-color: #CFD8DC; /* Светлый фон для поля ввода */
+    color: #263238; /* Темный цвет текста для контраста */
 }
 
 .submit-btn {
-    background-color: #4CAF50;
+    background-color: #FF5722; /* Яркий цвет кнопки, соответствующий Material Design */
     color: white;
     cursor: pointer;
-    transition: background-color 0.3s ease, transform 0.2s ease; /* Добавление анимации трансформации */
+    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.submit-btn:hover, .submit-btn:focus {
-    background-color: #45a049;
-    transform: scale(1.05); /* Небольшое увеличение кнопки при наведении или фокусировке */
+.submit-btn:hover, .submit-btn:focus, .submit-btn:focus-visible {
+    background-color: #E64A19; /* Темнее при наведении */
+    transform: scale(1.02); /* Умеренное увеличение */
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2); /* Добавленный эффект тени для улучшения отклика */
 }
 
 #particles-js {
@@ -49,11 +56,11 @@ body, html {
     height: 100%;
     top: 0;
     left: 0;
-    z-index: 0;
+    z-index: 1; /* Установка z-index в положительное значение, чтобы частицы были под контентом, но выше фона */
 }
 
 @media (max-width: 768px) {
-    .container {
-        width: 95%; /* Улучшение адаптивности на мобильных устройствах */
+    .form-wrapper {
+        width: 95%; /* Большая ширина на мобильных устройствах для лучшего использования пространства */
     }
 }
