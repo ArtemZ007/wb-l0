@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"path/filepath"
+	"strings"
 
 	"github.com/ArtemZ007/wb-l0/internal/cache"
 )
@@ -38,6 +40,26 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		default:
 			http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		}
+	})
+
+	// Обработка статических файлов
+	staticFilesPath := "../web/static/"
+	fileServer := http.FileServer(http.Dir(staticFilesPath))
+	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
+
+	// Добавление обработчика для корневого пути для отдачи index.html
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			// Обработка запросов к статическим файлам
+			path := filepath.Join(staticFilesPath, r.URL.Path)
+			if strings.HasSuffix(r.URL.Path, ".js") || strings.HasSuffix(r.URL.Path, ".css") || strings.HasSuffix(r.URL.Path, ".json") {
+				http.ServeFile(w, r, path)
+				return
+			}
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, filepath.Join(staticFilesPath, "index.html"))
 	})
 }
 
