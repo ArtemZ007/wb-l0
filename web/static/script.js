@@ -1,32 +1,48 @@
-const btn = document.querySelector("input[type='submit']");
-const btnText = btn.textContent;
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        // Инициализация частиц на фоне страницы.
+        await particlesJS.load('particles-js', 'particles.json');
+        console.log('callback - particles.js config loaded');
+    } catch (error) {
+        console.error('Error loading particles.js config:', error);
+    }
 
-btn.addEventListener("mouseover", () => {
-  btn.style.background = "blue";
-  btn.style.color = "white";
-  btn.style.boxShadow = "0 0 10px blue";
-  btn.textContent = "Activate";
-});
+    // Получение формы по её идентификатору.
+    const form = document.getElementById('uidForm');
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalButtonText = submitButton.textContent;
 
-btn.addEventListener("mouseout", () => {
-  btn.style.background = "#2c3e50";
-  btn.style.color = "white";
-  btn.style.boxShadow = "none";
-  btn.textContent = btnText;
-});
+    // Обработчик события отправки формы.
+    form.onsubmit = async function(e) {
+        e.preventDefault(); // Предотвращение стандартного поведения формы.
+        submitButton.textContent = 'Отправка...'; // Индикатор загрузки
+        submitButton.disabled = true; // Отключение кнопки на время отправки
 
-const tiles = document.querySelectorAll(".tile");
+        // Создание объекта FormData из формы.
+        const formData = new FormData(form);
 
-for (let i = 0; i < tiles.length; i++) {
-  tiles[i].style.backgroundImage = `linear-gradient(to right, rgb(255, 0, 0), rgb(0, 255, 0), rgb(0, 0, 255))`;
-}
-tiles.forEach((tile) => {
-  tile.addEventListener("mouseover", () => {
-    tile.style.background = "blue";
-    tile.style.color = "white";
-  });
-  tile.addEventListener("mouseout", () => {
-    tile.style.background = "#bdc3c7";
-    tile.style.color = "black";
-  });
+        try {
+            // Отправка данных формы на сервер методом POST.
+            const response = await fetch('/', {
+                method: 'POST',
+                body: formData
+            });
+
+            // Обработка ответа от сервера.
+            if (response.ok) {
+                // Успешная отправка данных.
+                alert('Value submitted successfully!');
+            } else {
+                // Ошибка при отправке данных.
+                alert('Failed to submit value.');
+            }
+        } catch (error) {
+            // Обработка ошибки при отправке данных.
+            console.error('Error:', error);
+            alert('An error occurred. Please try again.');
+        } finally {
+            submitButton.textContent = originalButtonText; // Восстановление текста кнопки
+            submitButton.disabled = false; // Включение кнопки после отправки
+        }
+    };
 });

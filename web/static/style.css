@@ -1,47 +1,59 @@
-*{
-  box-sizing: border-box;
+body, html {
+    height: 100%;
+    margin: 0;
+    background-color: #333;
+    color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-body {
-  font-family: 'Open Sans', sans-serif;
-  background-color: #464674;
-  color: #ecf0f1;
+.container {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    max-width: 600px; /* Ограничение максимальной ширины для улучшения читаемости на больших экранах */
 }
 
-h1 {
-  font-family: 'Lobster', cursive;
-  font-size: 72px;
-  text-align: center;
-  margin-top: 200px;
-  margin-bottom: 20px;
+.input-field, .submit-btn {
+    margin: 10px 0;
+    padding: 10px;
+    border: none;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    width: 100%; /* Улучшение адаптивности */
 }
 
-form {
-  max-width: 500px;
-  margin: 0 auto;
-  text-align: center;
+.input-field:focus, .submit-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px #4CAF50; /* Улучшение визуального отклика при фокусировке */
 }
 
-input[type="text"] {
-  font-family: 'Open Sans', sans-serif;
-  font-size: 16px;
-  padding: 12px;
-  width: 100%;
-  border: none;
-  border-bottom: 1px solid #bdc3c7;
+.submit-btn {
+    background-color: #4CAF50;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease; /* Добавление анимации трансформации */
 }
 
-input[type="submit"] {
-  font-family: 'Open Sans', sans-serif;
-  font-size: 16px;
-  padding: 12px 24px;
-  border-radius: 4px;
-  background-color: #3b406e;
-  color: #ecf0f1;
-  border: none;
-  cursor: pointer;
+.submit-btn:hover, .submit-btn:focus {
+    background-color: #45a049;
+    transform: scale(1.05); /* Небольшое увеличение кнопки при наведении или фокусировке */
 }
 
-input[type="submit"]:hover {
-  background-color: #464674;
+#particles-js {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    z-index: 0;
+}
+
+@media (max-width: 768px) {
+    .container {
+        width: 95%; /* Улучшение адаптивности на мобильных устройствах */
+    }
 }

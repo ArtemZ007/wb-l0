@@ -1,59 +1,85 @@
 package nats
 
 import (
-	"log"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/stan.go"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
-// // NATSConfig структура для конфигурации подключения к NATS
-// type NATSConfig struct {
-// 	// ClusterID string
-// 	// ClientID  string
-// 	URL string
-// }
-
-// Connect устанавливает соединение с NATS Streaming сервером
+// NatsConnection структура для управления соединением с NATS.
 type NatsConnection struct {
 	*nats.Conn
 }
 
-func Connect() (*NatsConnection, error) {
-	nc, err := nats.Connect(nats.DefaultURL)
-	if err != nil {
-		return &NatsConnection{}, errors.Wrap(err, "unable to connect nats")
-	}
-
-	ncStruct := &NatsConnection{nc}
-
-	return ncStruct, nil
+// NATSConfig представляет конфигурацию для подключения к NATS Streaming.
+type NATSConfig struct {
+	ClusterID string // Идентификатор кластера NATS Streaming
+	ClientID  string // Уникальный идентификатор клиента в рамках кластера
+	URL       string // URL для подключения к NATS
 }
 
-func (nc *NatsConnection) Close() error {
-	nc.Conn.Close()
-	return nil // Add this line to return nil error
+// SubscriptionConfig представляет конфигурацию для подписки.
+type SubscriptionConfig struct {
+	DurableName string
+	AckWait     time.Duration
 }
 
-// Subscribe подписывается на тему и обрабатывает сообщения
-func Subscribe(conn stan.Conn, subject string, cb stan.MsgHandler) (stan.Subscription, error) {
-	// Подписка на тему с использованием обработчика сообщений
-	sub, err := conn.Subscribe(subject, cb, stan.DurableName("my-durable"))
+// Connect устанавливает соединение с NATS сервером и возвращает экземпляр NatsConnection или ошибку.
+func Connect(cfg NATSConfig) (*NatsConnection, error) {
+	nc, err := nats.Connect(cfg.URL)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unable to connect to NATS")
 	}
-	log.Printf("Subscribed to subject: %s", subject)
+
+	logrus.WithFields(logrus.Fields{
+		"url": cfg.URL,
+	}).Info("Successfully connected to NATS")
+
+	return &NatsConnection{nc}, nil
+}
+
+// Close закрывает соединение с NATS сервером. Безопасно вызывается даже если соединение уже закрыто.
+func (nc *NatsConnection) Close() {
+	if nc.Conn != nil {
+		nc.Conn.Close()
+		logrus.Info("NATS connection closed")
+	}
+}
+
+// ConnectToNATSStreaming создает подключение к NATS Streaming и возвращает соединение или ошибку.
+func ConnectToNATSStreaming(cfg NATSConfig) (stan.Conn, error) {
+	sc, err := stan.Connect(cfg.ClusterID, cfg.ClientID, stan.NatsURL(cfg.URL))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to connect to NATS Streaming")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"clusterID": cfg.ClusterID,
+		"clientID":  cfg.ClientID,
+		"url":       cfg.URL,
+	}).Info("Successfully connected to NATS Streaming")
+
+	return sc, nil
+}
+
+// Subscribe подписывается на тему и обрабатывает сообщения через NATS Streaming. Возвращает подписку и ошибку.
+func Subscribe(sc stan.Conn, subject string, cb stan.MsgHandler, subCfg SubscriptionConfig) (stan.Subscription, error) {
+	options := []stan.SubscriptionOption{
+		stan.DurableName(subCfg.DurableName),
+		stan.AckWait(subCfg.AckWait),
+	}
+
+	sub, err := sc.Subscribe(subject, cb, options...)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to subscribe to subject")
+	}
+	logrus.WithFields(logrus.Fields{
+		"subject":     subject,
+		"durableName": subCfg.DurableName,
+	}).Info("Subscribed to subject with durable name")
+
 	return sub, nil
 }
-
-// // Publish публикует сообщение в тему
-// func Publish(conn stan.Conn, subject, message string) error {
-// 	// Публикация сообщения
-// 	err := conn.Publish(subject, []byte(message))
-// 	if err != nil {
-// 		return err
-// 	}
-// 	log.Printf("Published message to subject: %s", subject)
-// 	return nil
-// }

@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 
@@ -10,95 +9,65 @@ import (
 	"github.com/ArtemZ007/wb-l0/internal/model"
 )
 
-// Handler структура для HTTP-обработчиков с ссылкой на кэш
-type Handler struct {
+// OrderHandler структура для HTTP-обработчиков, связанных с заказами.
+type OrderHandler struct {
 	Cache *cache.Cache
 }
 
-// NewHandler создает новый экземпляр Handler
-func NewHandler(c *cache.Cache) *Handler {
-	return &Handler{Cache: c}
+// NewOrderHandler создает новый экземпляр OrderHandler.
+func NewOrderHandler(c *cache.Cache) *OrderHandler {
+	return &OrderHandler{Cache: c}
 }
 
-// GetOrder обрабатывает запросы на получение заказа по ID
-func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
+// handleOrder обрабатывает запросы к заказам.
+func (h *OrderHandler) handleOrder(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.GetOrder(w, r)
+	case http.MethodPost:
+		h.UpdateOrder(w, r)
+	default:
+		http.Error(w, "Unsupported method", http.StatusMethodNotAllowed)
 	}
+}
 
-	orderIDStr := strings.TrimPrefix(r.URL.Path, "/orders/")
-	if orderIDStr == "" {
-		http.Error(w, "Order ID is required", http.StatusBadRequest)
-		return
-	}
-
-	// Преобразование orderID из строки в int
-	// orderID, err := orderIDStr
-	// if err != nil {
-	// 	http.Error(w, "Invalid order ID format", http.StatusBadRequest)
-	// 	return
-	// }
-
-	order, found := h.Cache.GetOrder(orderIDStr)
+// GetOrder обрабатывает GET-запросы на получение заказа по ID.
+func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
+	orderID := strings.TrimPrefix(r.URL.Path, "/order/")
+	order, found := h.Cache.Get(orderID)
 	if !found {
-		http.Error(w, "Order not found", http.StatusNotFound)
+		writeJSONError(w, "Order not found", http.StatusNotFound)
 		return
 	}
 
-	response, err := json.Marshal(order)
-	if err != nil {
-		http.Error(w, "Failed to marshal order", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(response); err != nil {
-		log.Printf("Failed to write response: %v", err)
-	}
+	writeJSONResponse(w, order, http.StatusOK)
 }
 
-// UpdateOrder обрабатывает запросы на обновление заказа
-func (h *Handler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost { // Или http.MethodPut, если вы предпочитаете использовать PUT для обновлений
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	orderIDStr := strings.TrimPrefix(r.URL.Path, "/orders/update/")
-	if orderIDStr == "" {
-		http.Error(w, "Order ID is required", http.StatusBadRequest)
-		return
-	}
-
-	// Преобразование orderID из строки в int
-	// orderID, err := strconv.Atoi(orderIDStr)
-	// if err != nil {
-	// 	http.Error(w, "Invalid order ID format", http.StatusBadRequest)
-	// 	return
-	// }
-
+// UpdateOrder обрабатывает POST-запросы на обновление заказа.
+func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	var order model.Order
 	if err := json.NewDecoder(r.Body).Decode(&order); err != nil {
-		http.Error(w, "Invalid order data", http.StatusBadRequest)
+		writeJSONError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if err := h.Cache.UpdateOrder(orderIDStr, &order); err != nil {
-		http.Error(w, "Failed to update order", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
+	h.Cache.Set(order.OrderUID, &order)
+	writeJSONResponse(w, order, http.StatusOK)
 }
 
-// RegisterRoutes регистрирует маршруты для обработчиков
-func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/orders/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/update/") {
-			h.UpdateOrder(w, r)
-		} else {
-			h.GetOrder(w, r)
-		}
-	})
+// RegisterRoutes регистрирует маршруты для обработчиков.
+func (h *OrderHandler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/order/", h.handleOrder) // Используется один обработчик для всех методов
+}
+
+// writeJSONResponse упрощает отправку JSON ответов.
+func writeJSONResponse(w http.ResponseWriter, data interface{}, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(data)
+}
+
+// writeJSONError упрощает отправку JSON ошибок.
+func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
+	writeJSONResponse(w, map[string]string{"error": message}, statusCode)
 }

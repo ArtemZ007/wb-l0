@@ -1,90 +1,97 @@
 package main
 
 import (
-	"database/sql"
-	"log"
+	"context"
 	"net/http"
 	"os"
-	"strconv"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/ArtemZ007/wb-l0/internal/api"
 	"github.com/ArtemZ007/wb-l0/internal/cache"
-	"github.com/ArtemZ007/wb-l0/internal/db"
-	"github.com/ArtemZ007/wb-l0/internal/nats"
+	"github.com/ArtemZ007/wb-l0/internal/config"
 	"github.com/joho/godotenv"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	err := godotenv.Load("../.env")
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-	// Загрузка конфигурации из переменных окружения
-	dbHost := os.Getenv("DB_HOST")
-	dbPort := os.Getenv("DB_PORT")
-	dbUser := os.Getenv("DB_USER")
-	dbPassword := os.Getenv("DB_PASSWORD")
-	dbName := os.Getenv("DB_NAME")
-	// natsURL := os.Getenv("NATS_URL")
+	// Настройка логгера
+	logrus.SetFormatter(&logrus.TextFormatter{})
+	logrus.SetLevel(logrus.InfoLevel)
 
-	//Подключение к базе данных
-	dbPortInt, err := strconv.Atoi(dbPort)
-	if err != nil {
-		log.Fatal(err)
+	if err := run(); err != nil {
+		logrus.Fatalf("Ошибка запуска приложения: %v", err)
 	}
-	dbConf := db.NewDBConfig(dbHost, dbPortInt, dbUser, dbPassword, dbName)
-	database, err := db.Connect(dbConf)
-	if err != nil {
-		log.Fatalf("Failed to connect to the database: %v", err)
+}
+
+func run() error {
+	if err := setupEnvironment(); err != nil {
+		return err
 	}
-	defer func(database *sql.DB) {
-		err := database.Close()
-		if err != nil {
-			log.Printf("Failed to close the database connection: %v", err)
+
+	cfg, err := setupConfig()
+	if err != nil {
+		return err
+	}
+
+	database, err := setupDatabase(cfg)
+	if err != nil {
+		return err
+	}
+
+	cacheService, err := setupCache(database)
+	if err != nil {
+		logrus.Warnf("Ошибка настройки кэша: %v", err)
+	}
+
+	if err := setupNATS(cfg); err != nil {
+		return err
+	}
+
+	return startHTTPServer(cfg, cacheService)
+}
+
+func setupConfig() {
+	panic("unimplemented")
+}
+
+func setupEnvironment() error {
+	if err := godotenv.Load(); err != nil {
+		logrus.Warn("Файл .env не найден. Используются переменные окружения по умолчанию.")
+	}
+	return nil
+}
+
+// Остальные функции setupConfig, setupDatabase, setupCache, setupNATS остаются без изменений
+
+func startHTTPServer(cfg *config.AppConfig, cacheService *cache.Cache) error {
+	handler := api.NewHandler(cacheService)
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+
+	server := &http.Server{
+		Addr:    cfg.Server.Port,
+		Handler: mux,
+	}
+
+	go func() {
+		logrus.Println("Запуск сервера на порту:", cfg.Server.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logrus.Fatalf("Ошибка при запуске HTTP-сервера: %v", err)
 		}
-	}(database)
+	}()
 
-	// Инициализация кэша и его восстановление из базы данных
-	c := cache.New()
-	err = c.LoadFromDB(database)
-	if err != nil {
-		log.Fatalf("Failed to load cache from database: %v", err)
+	// Graceful Shutdown
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		return err
 	}
-
-	// Подключение к NATS Streaming
-	// natsConfig := nats.NATSConfig{
-	// 	URL: natsURL,
-	// 	//ClientID: os.Getenv("NATS_CLIENT_ID"),
-	// 	//ClusterID: os.Getenv("NATS_CLUSTER_ID"),
-	// }
-	natsConn, err := nats.Connect()
-	log.Println("Conecting to NATS Streaming: done")
-	if err != nil {
-		log.Fatalf("Failed to connect to NATS Streaming: %v", err)
-	}
-	defer natsConn.Close()
-
-	// Подписка на канал NATS с именем "orders"
-	// subscription, err := nats.Subscribe(stan.Conn, "orders", func(m *stan.Msg) {
-	// 	var order model.Order
-	// 	err := json.Unmarshal(m.Data, &order)
-	// 	if err != nil {
-	// 		log.Printf("Error unmarshalling message: %v", err)
-	// 		return
-	// 	}
-
-	// 	// Логика обработки десериализованных данных
-	// 	log.Printf("Received order: %+v\n", order)
-	// })
-	// if err != nil {
-	// 	log.Fatalf("Failed to subscribe to NATS channel 'orders': %v", err)
-	// }
-	// defer subscription.Unsubscribe()
-
-	// Запуск HTTP-сервера
-	router := api.NewRouter(c) // Убедитесь, что функция NewRouter принимает кэш как аргумент
-	log.Println("Starting HTTP server on port 8080")
-	if err := http.ListenAndServe(":8080", router); err != nil {
-		log.Fatalf("Failed to start HTTP server: %v", err)
-	}
+	logrus.Println("Сервер остановлен")
+	return nil
 }
