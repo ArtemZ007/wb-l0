@@ -6,6 +6,7 @@ import (
 
 	"github.com/ArtemZ007/wb-l0/internal/cache"
 	"github.com/ArtemZ007/wb-l0/internal/model"
+	"github.com/ArtemZ007/wb-l0/internal/validator"
 	"github.com/nats-io/stan.go"
 	"github.com/sirupsen/logrus"
 )
@@ -20,46 +21,18 @@ type SubscriptionConfig struct {
 // Возвращает подписку и ошибку. Функция принимает экземпляр cacheService для сохранения заказов в кэш.
 func Subscribe(sc stan.Conn, subject string, subCfg SubscriptionConfig, cacheService *cache.Cache) (stan.Subscription, error) {
 	options := []stan.SubscriptionOption{
-		stan.DurableName(subCfg.DurableName), // Устанавливаем постоянное имя для подписки, чтобы не терять сообщения при перезапуске.
-		stan.AckWait(subCfg.AckWait),         // Устанавливаем время ожидания подтверждения сообщения.
+		stan.DurableName(subCfg.DurableName),
+		stan.AckWait(subCfg.AckWait),
 	}
 
-	// Подписываемся на тему с заданными параметрами.
-	sub, err := sc.Subscribe(subject, func(msg *stan.Msg) {
-		var order model.Order
-		// Десериализуем сообщение в структуру Order.
-		if err := json.Unmarshal(msg.Data, &order); err != nil {
-			logrus.WithError(err).Error("Ошибка десериализации заказа")
-			return
-		}
+	messageHandler := func(msg *stan.Msg) {
+		handleMessage(msg, cacheService)
+	}
 
-		// Логируем получение нового заказа.
-		logrus.WithFields(logrus.Fields{
-			"orderUID":     order.OrderUID,
-			"trackNumber":  order.TrackNumber,
-			"customerID":   order.CustomerID,
-			"dateCreated":  order.DateCreated,
-			"deliveryCity": order.Delivery.City,
-		}).Info("Новый заказ получен")
-
-		// Проверяем, существует ли заказ в кэше.
-		if _, found := cacheService.GetOrder(order.OrderUID); !found {
-			// Если заказа нет в кэше, добавляем его.
-			cacheService.AddOrder(&order) // Предполагается, что метод AddOrder обновлен и теперь не возвращает ошибку.
-			logrus.WithFields(logrus.Fields{"orderUID": order.OrderUID}).Info("Заказ добавлен в кэш")
-		} else {
-			// Если заказ уже существует в кэше, логируем это.
-			logrus.WithFields(logrus.Fields{"orderUID": order.OrderUID}).Info("Заказ уже существует в кэше")
-		}
-
-		// Подтверждаем обработку сообщения.
-		if err := msg.Ack(); err != nil {
-			logrus.WithError(err).Error("Ошибка подтверждения сообщения")
-		}
-	}, options...)
-
+	sub, err := sc.Subscribe(subject, messageHandler, options...)
 	if err != nil {
-		return nil, err // Возвращаем ошибку без обертки, чтобы сохранить оригинальный тип ошибки.
+		logrus.WithError(err).Error("Ошибка при подписке на тему")
+		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -68,4 +41,35 @@ func Subscribe(sc stan.Conn, subject string, subCfg SubscriptionConfig, cacheSer
 	}).Info("Успешная подписка на тему")
 
 	return sub, nil
+}
+
+// handleMessage обрабатывает полученное сообщение из NATS Streaming.
+func handleMessage(msg *stan.Msg, cacheService *cache.Cache) {
+	var order model.Order
+	if err := json.Unmarshal(msg.Data, &order); err != nil {
+		logrus.WithError(err).Error("Ошибка десериализации заказа")
+		return
+	}
+
+	// Валидация полученного заказа
+	if validationErrors := validator.ValidateOrder(order); len(validationErrors) > 0 {
+		logrus.WithFields(logrus.Fields{
+			"orderUID": order.OrderUID,
+			"errors":   validationErrors,
+		}).Error("Ошибка валидации заказа")
+		return
+	}
+
+	// Получение объекта sql.DB
+	db := database.GetDB() // Это пример. Вам нужно будет заменить его на вашу реализацию.
+
+	if err := cacheService.AddOrder(db, order.OrderUID, &order); err != nil {
+		logrus.WithFields(logrus.Fields{"orderUID": order.OrderUID, "error": err}).Error("Ошибка при добавлении заказа в кэш")
+	} else {
+		logrus.WithFields(logrus.Fields{"orderUID": order.OrderUID}).Info("Заказ успешно добавлен в кэш")
+	}
+
+	if err := msg.Ack(); err != nil {
+		logrus.WithError(err).Error("Ошибка подтверждения сообщения")
+	}
 }

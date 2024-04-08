@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"html/template"
 	"net/http"
 	"strings"
 
@@ -33,18 +34,39 @@ func (h *OrderHandler) handleOrder(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetOrder обрабатывает GET-запросы, извлекая заказ по его ID из кэша.
+// GetOrder обрабатывает GET-запросы, извлекая заказ по его ID из кэша и отображая его в виде HTML страницы с JSON.
 func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	orderID := strings.TrimPrefix(r.URL.Path, "/api/orders/")
-	order, found := h.Cache.GetOrder(orderID) // Используем метод GetOrder для получения заказа
+	order, found := h.Cache.GetOrder(orderID)
 	if !found {
 		logrus.WithField("orderID", orderID).Warn("Заказ не найден в кэше")
-		writeJSONError(w, "Заказ не найден", http.StatusNotFound)
+		http.NotFound(w, r)
 		return
 	}
 
-	logrus.WithField("orderID", orderID).Info("Заказ успешно извлечен из кэша")
-	writeJSONResponse(w, order, http.StatusOK)
+	orderJSON, err := json.MarshalIndent(order, "", "  ")
+	if err != nil {
+		logrus.WithError(err).Error("Ошибка при маршалинге заказа в JSON")
+		http.Error(w, "Ошибка сервера", http.StatusInternalServerError)
+		return
+	}
+
+	tmpl := template.Must(template.New("order").Parse(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Заказ</title>
+        </head>
+        <body>
+            <pre>{{.}}</pre>
+        </body>
+        </html>
+    `))
+
+	if err := tmpl.Execute(w, string(orderJSON)); err != nil {
+		logrus.WithError(err).Error("Ошибка при рендеринге страницы заказа")
+		http.Error(w, "Ошибка сервера", http.StatusInternalServerError)
+	}
 }
 
 // UpdateOrder обрабатывает POST-запросы для обновления информации о заказе.
@@ -52,13 +74,13 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	var order model.Order
 	if err := json.NewDecoder(r.Body).Decode(&order); err != nil {
 		logrus.WithError(err).Error("Ошибка при декодировании тела запроса")
-		writeJSONError(w, "Неверное тело запроса", http.StatusBadRequest)
+		http.Error(w, "Неверное тело запроса", http.StatusBadRequest)
 		return
 	}
 
 	if err := h.Cache.UpdateOrder(order.OrderUID, &order); err != nil {
 		logrus.WithError(err).WithField("orderID", order.OrderUID).Error("Ошибка при обновлении заказа в кэше")
-		writeJSONError(w, "Ошибка при сохранении заказа", http.StatusInternalServerError)
+		http.Error(w, "Ошибка при сохранении заказа", http.StatusInternalServerError)
 		return
 	}
 
@@ -68,7 +90,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 
 // RegisterRoutes регистрирует маршруты для обработчиков заказов.
 func (h *OrderHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/orders/", h.handleOrder) // Обновленный путь для соответствия клиентскому коду
+	mux.HandleFunc("/api/orders/", h.handleOrder)
 }
 
 // writeJSONResponse отправляет ответ в формате JSON с указанным статус-кодом.

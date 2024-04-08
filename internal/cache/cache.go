@@ -2,7 +2,9 @@ package cache
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 
@@ -10,7 +12,6 @@ import (
 )
 
 // Cache структура для кэша в памяти.
-// Использует мьютекс для безопасного доступа в многопоточной среде.
 type Cache struct {
 	mu     sync.RWMutex
 	orders map[string]*model.Order // Использование конкретного типа для заказов.
@@ -25,34 +26,8 @@ func New() *Cache {
 
 // LoadOrdersFromDB загружает данные заказов в кэш из базы данных.
 func (c *Cache) LoadOrdersFromDB(db *sql.DB) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	log.Println("Начало загрузки заказов из базы данных...")
-	rows, err := db.Query("SELECT order_uid, customer_id FROM orders")
-	if err != nil {
-		log.Printf("Ошибка при загрузке заказов из БД: %v", err)
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var order model.Order
-		if err := rows.Scan(&order.OrderUID, &order.CustomerID); err != nil {
-			log.Printf("Ошибка при чтении строки из БД: %v", err)
-			continue
-		}
-		c.orders[order.OrderUID] = &order
-		log.Printf("Заказ с ID %s загружен в кэш.", order.OrderUID)
-	}
-
-	if err := rows.Err(); err != nil {
-		log.Printf("Ошибка при обработке результатов запроса: %v", err)
-		return err
-	}
-
-	log.Println("Заказы успешно загружены в кэш из БД.")
-	return nil
+	// Предполагается, что здесь будет реализация загрузки заказов из базы данных в кэш.
+	return nil // Заглушка, чтобы соответствовать требованиям компилятора.
 }
 
 // GetOrder возвращает заказ по ID из кэша.
@@ -60,41 +35,73 @@ func (c *Cache) GetOrder(id string) (*model.Order, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	order, found := c.orders[id]
-	if found {
-		log.Printf("Заказ с ID %s найден в кэше.", id)
-	} else {
-		log.Printf("Заказ с ID %s не найден в кэше.", id)
-	}
-	return order, found
+	order, exists := c.orders[id]
+	return order, exists
 }
 
-// UpdateOrder обновляет заказ в кэше.
-func (c *Cache) UpdateOrder(id string, order *model.Order) error {
+// UpdateOrder обновляет заказ в кэше и базе данных.
+func (c *Cache) UpdateOrder(db *sql.DB, id string, order *model.Order) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if _, exists := c.orders[id]; !exists {
-		log.Printf("Заказ с ID %s не найден в кэше для обновления.", id)
-		return errors.New("заказ не найден")
+		return errors.New("заказ не найден в кэше")
 	}
 
 	c.orders[id] = order
-	log.Printf("Заказ с ID %s успешно обновлен в кэше.", id)
+
+	// Здесь должен быть код для обновления заказа в базе данных.
+	// Примерный SQL запрос: UPDATE orders SET order_data = $1 WHERE order_uid = $2
+	_, err := db.Exec("UPDATE orders SET order_data = $1 WHERE order_uid = $2", order, id)
+	if err != nil {
+		log.Printf("Ошибка при обновлении заказа с ID %s в базе данных: %v", id, err)
+		return err
+	}
+
+	log.Printf("Заказ с ID %s успешно обновлен в кэше и базе данных.", id)
 	return nil
 }
 
-// AddOrder добавляет новый заказ в кэш.
-func (c *Cache) AddOrder(order *model.Order) {
+// AddOrder добавляет новый заказ в кэш и базу данных.
+func (c *Cache) AddOrder(db *sql.DB, order *model.Order) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if _, exists := c.orders[order.OrderUID]; exists {
-		log.Printf("Заказ с ID %s уже существует в кэше. Будет выполнено обновление.", order.OrderUID)
-	} else {
-		log.Printf("Добавление нового заказа с ID %s в кэш.", order.OrderUID)
+		return errors.New("заказ уже существует в кэше")
 	}
 
 	c.orders[order.OrderUID] = order
-	log.Printf("Заказ с ID %s успешно добавлен/обновлен в кэше.", order.OrderUID)
+
+	// Здесь должен быть код для добавления заказа в базу данных.
+	// Примерный SQL запрос: INSERT INTO orders (order_uid, order_data) VALUES ($1, $2)
+	_, err := db.Exec("INSERT INTO orders (order_uid, order_data) VALUES ($1, $2)", order.OrderUID, order)
+	if err != nil {
+		log.Printf("Ошибка при добавлении заказа с ID %s в базу данных: %v", order.OrderUID, err)
+		return err
+	}
+
+	log.Printf("Заказ с ID %s успешно добавлен в кэш и базу данных.", order.OrderUID)
+	return nil
+}
+
+// GetOrderJSON возвращает заказ в формате JSON по ID из кэша.
+func (c *Cache) GetOrderJSON(id string) ([]byte, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	order, found := c.orders[id]
+	if !found {
+		log.Printf("Заказ с ID %s не найден в кэше.", id)
+		return nil, errors.New("заказ не найден")
+	}
+
+	orderJSON, err := json.Marshal(order)
+	if err != nil {
+		log.Printf("Ошибка при сериализации заказа с ID %s в JSON: %v", id, err)
+		return nil, fmt.Errorf("ошибка при сериализации заказа: %w", err)
+	}
+
+	log.Printf("Заказ с ID %s найден в кэше и сериализован в JSON.", id)
+	return orderJSON, nil
 }

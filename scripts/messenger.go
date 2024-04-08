@@ -11,16 +11,17 @@ import (
 
 // Определение структуры данных, аналогичной модели в вашем проекте
 type OrderMessage struct {
-	OrderID     string `json:"order_id"`
+	OrderUID    string `json:"order_uid"` // Используем orderUID как главный идентификатор
 	TrackNumber string `json:"track_number"`
 	// Дополните структуру данными, соответствующими вашей модели
 }
 
 // Функция для генерации рандомного заказа
 func generateRandomOrder() OrderMessage {
+	orderUID := uuid.New().String() // Генерация рандомного UUID для orderUID
 	return OrderMessage{
-		OrderID:     uuid.New().String(),
-		TrackNumber: uuid.New().String(),
+		OrderUID:    orderUID,
+		TrackNumber: orderUID, // Используем тот же UUID для TrackNumber для упрощения
 		// Заполните остальные поля рандомными данными
 	}
 }
@@ -49,7 +50,7 @@ func main() {
 		}
 
 		// Логирование отправленного сообщения
-		log.Printf("Отправлен новый заказ: %s\n", order.OrderID)
+		log.Printf("Отправлен новый заказ: %s\n", order.OrderUID) // Используем OrderUID для логирования
 
 		// Таймаут в одну секунду между сообщениями
 		time.Sleep(1 * time.Second)
