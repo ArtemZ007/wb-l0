@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/ArtemZ007/wb-l0/internal/cache"
-	"github.com/ArtemZ007/wb-l0/internal/db"
-	"github.com/ArtemZ007/wb-l0/internal/model"
-	"github.com/ArtemZ007/wb-l0/internal/validator"
+	"github.com/ArtemZ007/wb-l0/internal/domain/model"
+	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
+	"github.com/ArtemZ007/wb-l0/internal/repository/db"
+	"github.com/ArtemZ007/wb-l0/pkg/validator"
 	"github.com/nats-io/stan.go"
 )
 

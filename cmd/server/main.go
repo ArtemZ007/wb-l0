@@ -6,11 +6,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ArtemZ007/wb-l0/internal/api"
 	"github.com/ArtemZ007/wb-l0/internal/config"
-	"github.com/ArtemZ007/wb-l0/internal/logger"
-	"github.com/ArtemZ007/wb-l0/internal/nats"
-	"github.com/ArtemZ007/wb-l0/internal/service"
+	"github.com/ArtemZ007/wb-l0/internal/delivery/http"
+	"github.com/ArtemZ007/wb-l0/internal/delivery/nats"
+	"github.com/ArtemZ007/wb-l0/internal/domain/service"
+	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	"github.com/joho/godotenv"
 )
 

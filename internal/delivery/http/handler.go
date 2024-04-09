@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArtemZ007/wb-l0/internal/cache"
+	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"github.com/sirupsen/logrus"
 )
 

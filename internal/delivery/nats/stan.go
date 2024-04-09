@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/ArtemZ007/wb-l0/internal/logger"
+	"github.com/ArtemZ007/wb-l0/internal/domain/service"
 	"github.com/ArtemZ007/wb-l0/internal/model"
-	"github.com/ArtemZ007/wb-l0/internal/service"
+	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	"github.com/nats-io/stan.go"
 )
 
