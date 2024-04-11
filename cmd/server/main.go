@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,6 +34,7 @@ func initLogger() *logrus.Logger {
 }
 
 func main() {
+	// Загрузка .env файла один раз в начале
 	envPath, _ := filepath.Abs("../../.env")
 	if err := godotenv.Load(envPath); err != nil {
 		logrus.Warn("Файл .env не найден. Продолжение с переменными окружения")
@@ -45,7 +47,14 @@ func main() {
 
 	cacheService := cache.NewCacheService(log)
 
-	dbService, err := db.NewDBService(os.Getenv("DATABASE_CONNECTION_STRING"), cacheService, log)
+	connectionString := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		os.Getenv("DB_HOST"),
+		os.Getenv("DB_PORT"),
+		os.Getenv("DB_USER"),
+		os.Getenv("DB_PASSWORD"),
+		os.Getenv("DB_NAME"))
+
+	dbService, err := db.NewDBService(connectionString, cacheService, log)
 	if err != nil {
 		log.Fatalf("Ошибка инициализации сервиса базы данных: %v", err)
 	}
@@ -53,10 +62,7 @@ func main() {
 
 	cacheService.LoadOrdersFromDB(ctx, dbService.DB())
 
-	natsURL := os.Getenv("NATS_URL")
-	channelName := os.Getenv("NATS_CHANNEL_NAME")
-	natsGroupName := os.Getenv("NATS_GROUP_NAME")
-	natsListener, err := nats.NewOrderListener(natsURL, channelName, natsGroupName, cacheService, log)
+	natsListener, err := nats.NewOrderListener(os.Getenv("NATS_URL"), os.Getenv("NATS_CLUSTER_ID"), os.Getenv("NATS_CLIENT_ID"), cacheService, log)
 	if err != nil {
 		log.Fatalf("Ошибка инициализации NATS слушателя: %v", err)
 	}
