@@ -5,39 +5,46 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
-	"github.com/ArtemZ007/wb-l0/internal/cache"
+	"github.com/ArtemZ007/wb-l0/internal/domain/model"
+	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	_ "github.com/lib/pq"
+	"github.com/sirupsen/logrus"
 )
 
 type DBService struct {
 	db     *sql.DB
 	cache  *cache.Cache
+	logger *logrus.Logger
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
+func (s *DBService) DB() *sql.DB {
+	return s.db
+}
+
 // NewDBService создает новый сервис для работы с базой данных и кэшем.
-func NewDBService(cfg *DBConfig, cache *cache.Cache) (*DBService, error) {
-	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName)
-	db, err := sql.Open("postgres", dsn)
+func NewDBService(connectionString string, cache *cache.Cache, logger *logrus.Logger) (*DBService, error) {
+	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
-		return nil, fmt.Errorf("db connect error: %w", err)
+		logger.Errorf("Ошибка подключения к базе данных: %v", err)
+		return nil, fmt.Errorf("ошибка подключения к базе данных: %w", err)
 	}
 	if err = db.Ping(); err != nil {
-		return nil, fmt.Errorf("db ping error: %w", err)
+		logger.Errorf("Ошибка проверки соединения с базой данных: %v", err)
+		return nil, fmt.Errorf("ошибка проверки соединения с базой данных: %w", err)
 	}
-	log.Println("Database connection established")
+	logger.Info("Соединение с базой данных успешно установлено")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	service := &DBService{
 		db:     db,
 		cache:  cache,
+		logger: logger,
 		ctx:    ctx,
 		cancel: cancel,
 	}
@@ -67,43 +74,65 @@ func (s *DBService) syncCacheToDB() {
 	for {
 		select {
 		case <-s.ctx.Done():
-			log.Println("Stopping database sync...")
+			s.logger.Info("Остановка синхронизации базы данных...")
 			return
 		case <-ticker.C:
 			if err := s.FillTablesFromCache(); err != nil {
-				log.Printf("Error syncing cache to DB: %v", err)
+				s.logger.Errorf("Ошибка синхронизации кэша с БД: %v", err)
 			}
 		}
 	}
 }
 
+// GetOrderByID извлекает заказ по его ID из базы данных.
+func (service *DBService) GetOrderByID(ctx context.Context, orderID string) (*model.Order, error) {
+	var order model.Order
+	// Предполагается, что у вас есть SQL запрос для получения заказа по ID. Настройте запрос в соответствии с вашей схемой.
+	query := `SELECT order_uid, track_number, date_created FROM orders WHERE order_uid = $1`
+	err := service.db.QueryRowContext(ctx, query, orderID).Scan(&order.OrderUID, &order.TrackNumber, &order.DateCreated)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Или ваша собственная ошибка, указывающая на отсутствие результата
+		}
+		return nil, err
+	}
+	// Возможно, вам потребуется отдельно загрузить связанные сущности (например, товары, доставку, оплату) или настроить запрос для их включения.
+	return &order, nil
+}
+
 // FillTablesFromCache заполняет таблицы базы данных данными из кэша.
 func (s *DBService) FillTablesFromCache() error {
-	log.Println("Starting to fill tables from cache")
+	s.logger.Info("Начало заполнения таблиц из кэша")
 
 	orderIDs := s.cache.GetAllOrderIDs()
 	for _, id := range orderIDs {
 		order, found := s.cache.GetOrder(id)
 		if !found {
-			log.Printf("Order with ID %s not found in cache", id)
+			s.logger.Warnf("Заказ с ID %s не найден в кэше", id)
 			continue
 		}
 
 		orderData, err := json.Marshal(order)
 		if err != nil {
-			log.Printf("Error serializing order with ID %s: %v", id, err)
+			s.logger.Errorf("Ошибка сериализации заказа с ID %s: %v", id, err)
 			continue
 		}
 
 		query := `INSERT INTO orders (order_uid, order_data) VALUES ($1, $2) ON CONFLICT (order_uid) DO NOTHING`
 		if _, err := s.db.ExecContext(s.ctx, query, order.OrderUID, orderData); err != nil {
-			log.Printf("Error inserting order with ID %s into database: %v", id, err)
+			s.logger.Errorf("Ошибка вставки заказа с ID %s в базу данных: %v", id, err)
 			continue
 		}
 
-		log.Printf("Order with ID %s successfully added to database from cache", id)
+		s.logger.Infof("Заказ с ID %s успешно добавлен в базу данных из кэша", id)
 	}
 
-	log.Println("Finished filling tables from cache")
+	s.logger.Info("Завершение заполнения таблиц из кэша")
+	return nil
+}
+func (service *DBService) Close() error {
+	if service.db != nil {
+		return service.db.Close()
+	}
 	return nil
 }

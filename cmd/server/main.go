@@ -2,88 +2,80 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
-	"github.com/ArtemZ007/wb-l0/internal/config"
-	"github.com/ArtemZ007/wb-l0/internal/delivery/http"
-	"github.com/ArtemZ007/wb-l0/internal/delivery/nats"
-	"github.com/ArtemZ007/wb-l0/internal/domain/service"
-	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	"github.com/joho/godotenv"
+	"github.com/sirupsen/logrus"
+
+	myhttp "github.com/ArtemZ007/wb-l0/internal/delivery/http"
+	"github.com/ArtemZ007/wb-l0/internal/delivery/nats"
+	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
+	"github.com/ArtemZ007/wb-l0/internal/repository/db"
 )
 
-func main() {
-	// Инициализация логгера
-	logger.Init()
-
-	// Загрузка переменных окружения
-	if err := godotenv.Load(); err != nil {
-		logger.Log.Warn("Файл .env не найден. Продолжение с переменными окружения")
-	}
-
-	// Загрузка конфигурации
-	cfg, err := config.LoadConfig()
+func initLogger() *logrus.Logger {
+	log := logrus.New()
+	log.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
+	level, err := logrus.ParseLevel(os.Getenv("LOG_LEVEL"))
 	if err != nil {
-		logger.Log.Fatalf("Ошибка загрузки конфигурации: %v", err)
+		log.SetLevel(logrus.InfoLevel)
+	} else {
+		log.SetLevel(level)
+	}
+	log.SetOutput(os.Stdout)
+	return log
+}
+
+func main() {
+	envPath, _ := filepath.Abs("../../.env")
+	if err := godotenv.Load(envPath); err != nil {
+		logrus.Warn("Файл .env не найден. Продолжение с переменными окружения")
 	}
 
-	// Создание контекста для управления жизненным циклом приложения
+	log := initLogger()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Обработка сигналов ОС для грациозного завершения
-	go handleShutdown(cancel)
+	cacheService := cache.NewCacheService(log)
 
-	// Инициализация и запуск сервисов
-	if err := startServices(ctx, cfg); err != nil {
-		logger.Log.Fatalf("Ошибка запуска сервисов: %v", err)
-	}
-}
-
-func handleShutdown(cancel context.CancelFunc) {
-	stopChan := make(chan os.Signal, 1)
-	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
-	<-stopChan
-	logger.Log.Info("Получен сигнал остановки. Завершение работы...")
-	cancel()
-}
-
-func startServices(ctx context.Context, cfg *config.AppConfig) error {
-	// Инициализация и запуск сервиса базы данных
-	dbService, err := service.NewDatabaseService(cfg)
+	dbService, err := db.NewDBService(os.Getenv("DATABASE_CONNECTION_STRING"), cacheService, log)
 	if err != nil {
-		return err
+		log.Fatalf("Ошибка инициализации сервиса базы данных: %v", err)
 	}
-	go dbService.Start(ctx)
+	defer dbService.Close()
 
-	// Инициализация и запуск сервиса кэша
-	cacheService, err := service.NewCacheService(dbService.GetDB())
+	cacheService.LoadOrdersFromDB(ctx, dbService.DB())
+
+	natsURL := os.Getenv("NATS_URL")
+	channelName := os.Getenv("NATS_CHANNEL_NAME")
+	natsGroupName := os.Getenv("NATS_GROUP_NAME")
+	natsListener, err := nats.NewOrderListener(natsURL, channelName, natsGroupName, cacheService, log)
 	if err != nil {
-		return err
+		log.Fatalf("Ошибка инициализации NATS слушателя: %v", err)
 	}
-	go cacheService.Start(ctx)
+	go natsListener.Start(ctx)
 
-	// Инициализация и запуск NATS
-	natsService, err := nats.NewNatsService(cfg, dbService.GetDB(), cacheService.GetCache())
-	if err != nil {
-		return err
-	}
-	go natsService.Start(ctx)
+	httpHandler := myhttp.NewHandler(cacheService, dbService, log)
+	mux := http.NewServeMux()
+	httpHandler.RegisterRoutes(mux)
+	httpServer := myhttp.NewServer(os.Getenv("SERVER_PORT"), mux, log)
+	go httpServer.Start(ctx)
 
-	// Инициализация и запуск HTTP сервера
-	httpService := api.NewHTTPService(cfg, cacheService.GetCache(), dbService.GetDB())
-	go httpService.Start(ctx)
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-signalChan
+		log.Info("Получен сигнал остановки. Завершение работы...")
+		cancel()
+	}()
 
-	// Блокировка основного потока до получения сигнала остановки
 	<-ctx.Done()
-
-	// Остановка сервисов
-	natsService.Stop()
-	httpService.Stop()
-	cacheService.Stop()
-	dbService.Stop()
-
-	return nil
+	log.Info("Приложение завершило работу.")
 }

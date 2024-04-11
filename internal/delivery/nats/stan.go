@@ -3,69 +3,55 @@ package nats
 import (
 	"context"
 	"encoding/json"
-	"sync"
+	"os"
 
-	"github.com/ArtemZ007/wb-l0/internal/domain/service"
-	"github.com/ArtemZ007/wb-l0/internal/model"
-	"github.com/ArtemZ007/wb-l0/pkg/logger"
+	"github.com/ArtemZ007/wb-l0/internal/domain/model"
+	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"github.com/nats-io/stan.go"
+	"github.com/sirupsen/logrus"
 )
-
-// ListenerConfig конфигурация для слушателя NATS Streaming.
-type ListenerConfig struct {
-	ClusterID string
-	ClientID  string
-	NatsURL   string
-	Subject   string
-	QGroup    string
-	Durable   string
-}
 
 // OrderListener слушатель сообщений о заказах через NATS Streaming.
 type OrderListener struct {
-	sc             stan.Conn
-	service        *service.Service
-	listenerConfig ListenerConfig
+	sc           stan.Conn
+	cacheService *cache.Cache
+	logger       *logrus.Logger
 }
 
 // NewOrderListener создает новый экземпляр OrderListener для NATS Streaming.
-func NewOrderListener(svc *service.Service, config ListenerConfig) (*OrderListener, error) {
-	sc, err := stan.Connect(config.ClusterID, config.ClientID, stan.NatsURL(config.NatsURL))
+func NewOrderListener(natsURL, clusterID, clientID string, cacheService *cache.Cache, logger *logrus.Logger) (*OrderListener, error) {
+	sc, err := stan.Connect(clusterID, clientID, stan.NatsURL(natsURL))
 	if err != nil {
-		logger.Error("Ошибка подключения к NATS Streaming:", err)
+		logger.Errorf("Ошибка подключения к NATS Streaming: %v", err)
 		return nil, err
 	}
 
 	return &OrderListener{
-		sc:             sc,
-		service:        svc,
-		listenerConfig: config,
+		sc:           sc,
+		cacheService: cacheService,
+		logger:       logger,
 	}, nil
 }
 
-// Start запускает слушатель сообщений в отдельной горутине.
-func (ol *OrderListener) Start(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	subscription, err := ol.sc.QueueSubscribe(ol.listenerConfig.Subject, ol.listenerConfig.QGroup, func(msg *stan.Msg) {
+// Start запускает слушатель сообщений.
+func (ol *OrderListener) Start(ctx context.Context) {
+	subscription, err := ol.sc.Subscribe(os.Getenv("NATS_CHANNEL_NAME"), func(msg *stan.Msg) {
 		var order model.Order
 		if err := json.Unmarshal(msg.Data, &order); err != nil {
-			logger.Error("Ошибка десериализации заказа:", err)
+			ol.logger.Errorf("Ошибка десериализации заказа: %v", err)
 			return
 		}
 
-		// Передача заказа в сервис для дальнейшей обработки
-		if err := ol.service.ProcessOrder(ctx, &order); err != nil {
-			logger.Error("Ошибка при обработке заказа:", err)
-			return
-		}
+		// Кэширование заказа
+		ol.cacheService.AddOrUpdateOrder(&order)
+		ol.logger.Infof("Заказ с ID %s успешно обработан и добавлен в кэш", order.OrderUID)
 
 		// Подтверждение обработки сообщения
 		msg.Ack()
 
-	}, stan.DurableName(ol.listenerConfig.Durable), stan.SetManualAckMode(), stan.AckWait(stan.DefaultAckWait))
+	}, stan.DurableName("order-listener-durable"), stan.SetManualAckMode(), stan.AckWait(stan.DefaultAckWait))
 	if err != nil {
-		logger.Fatalf("Не удалось подписаться на тему %s: %v", ol.listenerConfig.Subject, err)
+		ol.logger.Fatalf("Не удалось подписаться на канал %s: %v", os.Getenv("NATS_CHANNEL_NAME"), err)
 	}
 	defer subscription.Unsubscribe()
 
@@ -75,6 +61,6 @@ func (ol *OrderListener) Start(ctx context.Context, wg *sync.WaitGroup) {
 // Stop останавливает слушателя и закрывает соединение с NATS Streaming.
 func (ol *OrderListener) Stop() {
 	if err := ol.sc.Close(); err != nil {
-		logger.Error("Ошибка при закрытии соединения с NATS Streaming:", err)
+		ol.logger.Errorf("Ошибка при закрытии соединения с NATS Streaming: %v", err)
 	}
 }

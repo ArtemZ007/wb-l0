@@ -2,58 +2,58 @@ package model
 
 // Delivery описывает информацию о доставке.
 type Delivery struct {
-	Name    *string `json:"name,omitempty"`    // Имя получателя
-	Phone   *string `json:"phone,omitempty"`   // Телефонный номер получателя
-	Zip     *string `json:"zip,omitempty"`     // Почтовый индекс
-	City    *string `json:"city,omitempty"`    // Город
-	Address *string `json:"address,omitempty"` // Адрес
-	Region  *string `json:"region,omitempty"`  // Регион
-	Email   *string `json:"email,omitempty"`   // Электронная почта
+	Name    *string `json:"name,omitempty" validate:"required"`        // Имя получателя
+	Phone   *string `json:"phone,omitempty" validate:"required,e164"`  // Телефонный номер получателя
+	Zip     *string `json:"zip,omitempty" validate:"required"`         // Почтовый индекс
+	City    *string `json:"city,omitempty" validate:"required"`        // Город
+	Address *string `json:"address,omitempty" validate:"required"`     // Адрес
+	Region  *string `json:"region,omitempty" validate:"required"`      // Регион
+	Email   *string `json:"email,omitempty" validate:"required,email"` // Электронная почта
 }
 
 // Payment описывает информацию об оплате.
 type Payment struct {
-	Transaction  *string `json:"transaction,omitempty"`   // Идентификатор транзакции
-	RequestID    *string `json:"request_id,omitempty"`    // Идентификатор запроса
-	Currency     *string `json:"currency,omitempty"`      // Валюта
-	Provider     *string `json:"provider,omitempty"`      // Провайдер платежа
-	Amount       *int    `json:"amount,omitempty"`        // Сумма
-	PaymentDt    *int    `json:"payment_dt,omitempty"`    // Дата и время платежа
-	Bank         *string `json:"bank,omitempty"`          // Банк
-	DeliveryCost *int    `json:"delivery_cost,omitempty"` // Стоимость доставки
-	GoodsTotal   *int    `json:"goods_total,omitempty"`   // Общая стоимость товаров
-	CustomFee    *int    `json:"custom_fee,omitempty"`    // Сборы
+	Transaction  *string `json:"transaction,omitempty" validate:"required"`     // Идентификатор транзакции
+	RequestID    *string `json:"request_id,omitempty" validate:"required"`      // Идентификатор запроса
+	Currency     *string `json:"currency,omitempty" validate:"required"`        // Валюта
+	Provider     *string `json:"provider,omitempty" validate:"required"`        // Провайдер платежа
+	Amount       *int    `json:"amount,omitempty" validate:"required,gt=0"`     // Сумма
+	PaymentDt    *int    `json:"payment_dt,omitempty" validate:"required,gt=0"` // Дата и время платежа
+	Bank         *string `json:"bank,omitempty" validate:"required"`            // Банк
+	DeliveryCost *int    `json:"delivery_cost,omitempty" validate:"gte=0"`      // Стоимость доставки
+	GoodsTotal   *int    `json:"goods_total,omitempty" validate:"gte=0"`        // Общая стоимость товаров
+	CustomFee    *int    `json:"custom_fee,omitempty" validate:"gte=0"`         // Сборы
 }
 
 // Item описывает информацию о товаре в заказе.
 type Item struct {
-	ChrtID      *int    `json:"chrt_id,omitempty"`      // Идентификатор товара
-	TrackNumber *string `json:"track_number,omitempty"` // Номер отслеживания
-	Price       *int    `json:"price,omitempty"`        // Цена
-	RID         *string `json:"rid,omitempty"`          // Внутренний идентификатор
-	Name        *string `json:"name,omitempty"`         // Название
-	Sale        *int    `json:"sale,omitempty"`         // Скидка
-	Size        *string `json:"size,omitempty"`         // Размер
-	TotalPrice  *int    `json:"total_price,omitempty"`  // Итоговая цена
-	NmID        *int    `json:"nm_id,omitempty"`        // Внешний идентификатор
-	Brand       *string `json:"brand,omitempty"`        // Бренд
-	Status      *int    `json:"status,omitempty"`       // Статус
+	ChrtID      *int    `json:"chrt_id,omitempty" validate:"required"`          // Идентификатор товара
+	TrackNumber *string `json:"track_number,omitempty" validate:"required"`     // Номер отслеживания
+	Price       *int    `json:"price,omitempty" validate:"required,gt=0"`       // Цена
+	RID         *string `json:"rid,omitempty" validate:"required"`              // Внутренний идентификатор
+	Name        *string `json:"name,omitempty" validate:"required"`             // Название
+	Sale        *int    `json:"sale,omitempty" validate:"gte=0,lte=100"`        // Скидка
+	Size        *string `json:"size,omitempty" validate:"required"`             // Размер
+	TotalPrice  *int    `json:"total_price,omitempty" validate:"required,gt=0"` // Итоговая цена
+	NmID        *int    `json:"nm_id,omitempty" validate:"required"`            // Внешний идентификатор
+	Brand       *string `json:"brand,omitempty" validate:"required"`            // Бренд
+	Status      *int    `json:"status,omitempty" validate:"required"`           // Статус
 }
 
 // Order описывает структуру заказа.
 type Order struct {
-	OrderUID          string    `json:"order_uid"`                    // Уникальный идентификатор заказа (обязательное поле)
-	TrackNumber       *string   `json:"track_number,omitempty"`       // Номер отслеживания заказа
-	Entry             *string   `json:"entry,omitempty"`              // Точка входа
-	Delivery          *Delivery `json:"delivery,omitempty"`           // Информация о доставке (опционально)
-	Payment           *Payment  `json:"payment,omitempty"`            // Информация об оплате (опционально)
-	Items             []Item    `json:"items"`                        // Список товаров (может быть пустым, но не nil)
-	Locale            *string   `json:"locale,omitempty"`             // Локализация
-	InternalSignature *string   `json:"internal_signature,omitempty"` // Внутренняя подпись
-	CustomerID        *string   `json:"customer_id,omitempty"`        // Идентификатор клиента
-	DeliveryService   *string   `json:"delivery_service,omitempty"`   // Служба доставки
-	Shardkey          *string   `json:"shardkey,omitempty"`           // Ключ шардирования
-	SMID              *int      `json:"sm_id,omitempty"`              // Идентификатор социальных медиа
-	DateCreated       string    `json:"date_created"`                 // Дата создания заказа (обязательное поле)
-	OofShard          *string   `json:"oof_shard,omitempty"`          // Шард для OOF
+	OrderUID          string    `json:"order_uid" validate:"required,uuid4"`               // Уникальный идентификатор заказа
+	TrackNumber       *string   `json:"track_number,omitempty" validate:"omitempty,uuid4"` // Номер отслеживания заказа
+	Entry             *string   `json:"entry,omitempty" validate:"omitempty"`              // Точка входа
+	Delivery          *Delivery `json:"delivery,omitempty" validate:"omitempty,dive"`      // Информация о доставке
+	Payment           *Payment  `json:"payment,omitempty" validate:"omitempty,dive"`       // Информация об оплате
+	Items             []Item    `json:"items" validate:"required,dive"`                    // Список товаров
+	Locale            *string   `json:"locale,omitempty" validate:"omitempty"`             // Локализация
+	InternalSignature *string   `json:"internal_signature,omitempty" validate:"omitempty"` // Внутренняя подпись
+	CustomerID        *string   `json:"customer_id,omitempty" validate:"omitempty,uuid4"`  // Идентификатор клиента
+	DeliveryService   *string   `json:"delivery_service,omitempty" validate:"omitempty"`   // Служба доставки
+	Shardkey          *string   `json:"shardkey,omitempty" validate:"omitempty"`           // Ключ шардирования
+	SMID              *int      `json:"sm_id,omitempty" validate:"omitempty"`              // Идентификатор социальных медиа
+	DateCreated       string    `json:"date_created" validate:"required"`                  // Дата создания заказа
+	OofShard          *string   `json:"oof_shard,omitempty" validate:"omitempty"`          // Шард для OOF
 }

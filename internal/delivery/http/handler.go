@@ -1,79 +1,124 @@
-package api
+package http
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
+	"github.com/ArtemZ007/wb-l0/internal/repository/db"
 	"github.com/sirupsen/logrus"
 )
 
-// OrderHandler структура для HTTP-обработчиков, связанных с заказами.
-type OrderHandler struct {
-	Cache *cache.Cache
-	DB    *sql.DB
+// Server структура для HTTP-сервера с конфигурацией и зависимостями.
+type Server struct {
+	port   string
+	server *http.Server
+	logger *logrus.Logger
 }
 
-// NewOrderHandler создает новый экземпляр OrderHandler с предоставленным кэшем и базой данных.
-func NewOrderHandler(c *cache.Cache, db *sql.DB) *OrderHandler {
-	return &OrderHandler{
-		Cache: c,
-		DB:    db,
+// MyHandler структура для обработчика HTTP-запросов с зависимостями.
+type MyHandler struct {
+	CacheService *cache.Cache
+	DBService    *db.DBService
+	Logger       *logrus.Logger
+}
+
+// NewServer создает новый HTTP-сервер с заданной конфигурацией.
+func NewServer(port string, handler http.Handler, logger *logrus.Logger) *Server {
+	return &Server{
+		port: port,
+		server: &http.Server{
+			Addr:    ":" + port,
+			Handler: handler,
+		},
+		logger: logger,
 	}
 }
 
-// RegisterRoutes регистрирует маршруты для обработчиков заказов.
-func (h *OrderHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/order/", h.handleOrder)
+// Start запускает HTTP-сервер.
+func (s *Server) Start(ctx context.Context) {
+	go func() {
+		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			s.logger.Fatalf("Не удалось начать прослушивание на порту %s: %v", s.port, err)
+		}
+	}()
+	s.logger.Infof("Сервер запущен на порту %s", s.port)
+
+	<-ctx.Done()
+
+	ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := s.server.Shutdown(ctxShutdown); err != nil {
+		s.logger.Fatalf("Не удалось корректно завершить работу сервера: %+v", err)
+	}
+	s.logger.Info("Сервер корректно завершил работу")
 }
 
-func (h *OrderHandler) handleOrder(w http.ResponseWriter, r *http.Request) {
+// NewHandler создает новый экземпляр MyHandler с кэшем, базой данных и логгером.
+func NewHandler(cacheService *cache.Cache, dbService *db.DBService, logger *logrus.Logger) *MyHandler {
+	return &MyHandler{
+		CacheService: cacheService,
+		DBService:    dbService,
+		Logger:       logger,
+	}
+}
+
+// RegisterRoutes регистрирует маршруты для обработчика.
+func (h *MyHandler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/order/", h.handleOrder)
+	// Дополнительные маршруты могут быть зарегистрированы здесь
+}
+
+// handleOrder обрабатывает запросы к /api/order/.
+func (h *MyHandler) handleOrder(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		h.GetOrder(w, r)
 	default:
-		logrus.Warn("Получен запрос с неподдерживаемым методом")
-		http.Error(w, "Неподдерживаемый метод", http.StatusMethodNotAllowed)
+		h.Logger.Warn("Получен запрос с неподдерживаемым методом")
+		writeJSONError(w, "Неподдерживаемый метод", http.StatusMethodNotAllowed, h.Logger)
 	}
 }
 
 // GetOrder обрабатывает GET-запросы для получения данных о заказе по ID.
-func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
+func (h *MyHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	orderID := strings.TrimPrefix(r.URL.Path, "/api/order/")
-	order, found := h.Cache.GetOrder(orderID)
+	order, found := h.CacheService.GetOrder(orderID)
 	if !found {
-		// Если заказ не найден в кэше, пытаемся извлечь его из базы данных
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		var err error
-		order, err = db.GetOrderByID(ctx, h.DB, orderID)
+		order, err = h.DBService.GetOrderByID(ctx, orderID)
 		if err != nil {
-			logrus.WithField("orderID", orderID).WithError(err).Warn("Заказ не найден")
-			writeJSONError(w, "Заказ не найден", http.StatusNotFound)
+			h.Logger.WithField("orderID", orderID).WithError(err).Warn("Заказ не найден")
+			writeJSONError(w, "Заказ не найден", http.StatusNotFound, h.Logger)
 			return
 		}
 
-		// Добавляем заказ в кэш после успешного извлечения из базы данных
-		h.Cache.SetOrder(orderID, order)
+		h.CacheService.AddOrUpdateOrder(order)
 	}
 
-	logrus.WithField("orderID", orderID).Info("Заказ успешно извлечен")
-	writeJSONResponse(w, order, http.StatusOK)
+	h.Logger.WithField("orderID", orderID).Info("Заказ успешно извлечен")
+	writeJSONResponse(w, order, http.StatusOK, h.Logger)
 }
 
-func writeJSONResponse(w http.ResponseWriter, data interface{}, statusCode int) {
+func writeJSONResponse(w http.ResponseWriter, data interface{}, statusCode int, logger *logrus.Logger) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		logrus.WithError(err).Error("Ошибка при кодировании ответа в JSON")
+		logger.WithError(err).Error("Ошибка при кодировании ответа в JSON")
 	}
 }
 
-func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
-	writeJSONResponse(w, map[string]string{"error": message}, statusCode)
+func writeJSONError(w http.ResponseWriter, message string, statusCode int, logger *logrus.Logger) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		logger.WithError(err).Error("Ошибка при кодировании ошибки в JSON")
+	}
 }
