@@ -58,7 +58,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Ошибка инициализации сервиса базы данных: %v", err)
 	}
-	defer dbService.Close()
+	defer func(dbService *db.DBService) {
+		err := dbService.Close()
+		if err != nil {
+
+		}
+	}(dbService)
 
 	cacheService.LoadOrdersFromDB(ctx, dbService.DB())
 
