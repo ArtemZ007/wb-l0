@@ -122,3 +122,11 @@ func writeJSONError(w http.ResponseWriter, message string, statusCode int, logge
 		logger.WithError(err).Error("Ошибка при кодировании ошибки в JSON")
 	}
 }
+func (s *Server) Shutdown(ctx context.Context) error {
+	// Устанавливаем дедлайн для завершения выдающихся запросов.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Пытаемся корректно завершить работу сервера.
+	return s.server.Shutdown(ctx)
+}
