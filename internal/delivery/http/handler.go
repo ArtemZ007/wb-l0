@@ -1,86 +1,82 @@
-// Package http предоставляет утилиты сервера HTTP для обработки запросов и ответов.
-// Это включает в себя маршрутизацию и обслуживание HTTP-запросов, обработку ошибок и кодирование ответов.
-//
-// Автор: ArtemZ007
-package http
+package httpQS
 
 import (
 	"encoding/json"
+	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"net/http"
 
-	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
+	"github.com/ArtemZ007/wb-l0/internal/domain/model"
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 )
 
-// Handler структура обработчика HTTP-запросов. Отвечает за обработку входящих запросов и взаимодействие с кэшем.
-type Handler struct {
-	cacheService cache.Cache    // Используем интерфейс Cache для улучшения интеграции с сервисом кэширования.
-	logger       *logger.Logger // Используем конкретную реализацию Logger для унификации логирования.
+// DataService интерфейс, определяющий методы для работы с данными.
+// Этот интерфейс должен быть реализован сервисом, который занимается получением данных.
+type DataService interface {
+	GetData() ([]model.Order, error)
 }
 
-// NewHandler создает новый экземпляр Handler. Принимает сервис кэширования и экземпляр логгера.
-func NewHandler(cacheService cache.Cache, logger *logger.Logger) *Handler {
+// Handler структура обработчика HTTP-запросов.
+type Handler struct {
+	dataService DataService    // Сервис для работы с данными
+	logger      *logger.Logger // Логгер для регистрации событий
+}
+
+// NewHandler функция для создания нового экземпляра Handler.
+// Принимает в качестве аргументов реализацию интерфейса DataService и экземпляр логгера.
+func NewHandler(dataService cache.ICacheInterface, logger *logger.Logger) *Handler {
 	return &Handler{
-		cacheService: cacheService,
-		logger:       logger,
+		dataService: dataService,
+		logger:      logger,
 	}
 }
 
-// ServeHTTP метод для обработки HTTP-запросов. Определяет маршруты и вызывает соответствующие обработчики.
+// ServeHTTP метод для обработки HTTP-запросов.
+// Реализует интерфейс http.Handler, что позволяет использовать экземпляры Handler как обработчики в HTTP-сервере.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
-	case "/order":
-		h.handleGetOrder(w, r)
+	case "/":
+		h.handleIndex(w, r)
 	default:
 		h.handleNotFound(w, r)
 	}
 }
 
-// handleGetOrder обрабатывает запросы на получение заказа по его ID. Возвращает данные заказа в формате JSON.
-func (h *Handler) handleGetOrder(w http.ResponseWriter, r *http.Request) {
+// handleIndex метод для обработки запросов к корневому маршруту.
+func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		h.writeJSONError(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+		h.writeJSONError(w, "Неподдерживаемый метод", http.StatusMethodNotAllowed)
 		return
 	}
 
-	orderID := r.URL.Query().Get("id")
-	if orderID == "" {
-		h.writeJSONError(w, "Не указан ID заказа", http.StatusBadRequest)
+	data, err := h.dataService.GetData()
+	if err != nil {
+		h.logger.Error("Ошибка при получении данных: ", err)
+		h.writeJSONError(w, "Ошибка сервера", http.StatusInternalServerError)
 		return
 	}
 
-	order, found := h.cacheService.GetOrder(orderID)
-	if !found {
-		h.logger.Error("Заказ не найден", map[string]interface{}{"orderID": orderID})
-		h.writeJSONError(w, "Заказ не найден", http.StatusNotFound)
-		return
-	}
-
-	h.logger.Info("Заказ успешно найден и отправлен", map[string]interface{}{"orderID": orderID})
-	h.writeJSONResponse(w, order, http.StatusOK)
+	h.writeJSONResponse(w, data, http.StatusOK)
 }
 
-// writeJSONResponse отправляет ответ в формате JSON. Устанавливает необходимые заголовки и сериализует данные.
+// writeJSONResponse метод для отправки ответа в формате JSON.
 func (h *Handler) writeJSONResponse(w http.ResponseWriter, data interface{}, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		h.logger.Error("Ошибка при сериализации данных в JSON", map[string]interface{}{"error": err})
-		http.Error(w, "Ошибка сервера", http.StatusInternalServerError)
+		h.logger.Error("Не удалось закодировать ответ в JSON: ", err)
 	}
 }
 
-// writeJSONError отправляет сообщение об ошибке в формате JSON. Устанавливает необходимые заголовки.
+// writeJSONError метод для отправки сообщения об ошибке в формате JSON.
 func (h *Handler) writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
-		h.logger.Error("Ошибка при отправке сообщения об ошибке", map[string]interface{}{"error": err})
-		http.Error(w, "Ошибка сервера", http.StatusInternalServerError)
+		h.logger.Error("Ошибка при кодировании ошибки в JSON: ", err)
 	}
 }
 
-// handleNotFound обрабатывает несуществующие маршруты. Возвращает сообщение об ошибке.
+// handleNotFound метод для обработки несуществующих маршрутов.
 func (h *Handler) handleNotFound(w http.ResponseWriter, _ *http.Request) {
-	h.writeJSONError(w, "Страница не найдена", http.StatusNotFound)
+	h.writeJSONError(w, "Не найдено", http.StatusNotFound)
 }

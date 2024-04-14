@@ -1,69 +1,76 @@
-// Package logger Пакет logger предоставляет структурированный интерфейс логирования, построенный на основе logrus.
-// Это позволяет легко логировать сообщения различной важности и с контекстной информацией.
-// Интерфейс Logger абстрагирует базовую библиотеку логирования (в данном случае logrus),
-// что позволяет легко заменять или модифицировать бэкенд логирования без влияния на остальную часть кодовой базы.
 package logger
 
 import (
+	"os"
+
 	"github.com/sirupsen/logrus"
 )
 
-// Config представляет конфигурацию для логгера.
-type Config struct {
-	Level string // Уровень логирования (например, "info", "debug")
-	// Дополнительные поля конфигурации могут быть добавлены здесь
+// ILogger определяет интерфейс для логирования.
+type ILogger interface {
+	Info(args ...interface{})
+	Warn(args ...interface{})
+	Error(args ...interface{})
+	Fatal(args ...interface{})
+	Debug(args ...interface{})
+	WithField(key string, value interface{}) ILogger
+	WithFields(fields map[string]interface{}) ILogger
 }
 
-// Logger реализует интерфейс ILogger и предоставляет методы для структурированного логирования.
+// Logger реализует ILogger и обеспечивает логирование.
 type Logger struct {
-	logger *logrus.Logger
+	entry *logrus.Entry // Changed from *logrus.Logger to *logrus.Entry
 }
 
-// New создает и возвращает новый экземпляр Logger, настроенный согласно переданной конфигурации.
-func New(config Config) *Logger {
+// New создает и возвращает новый экземпляр Logger, настроенный с уровнем логирования.
+func New(logLevel string) ILogger {
 	logger := logrus.New()
-	level, err := logrus.ParseLevel(config.Level)
+	logger.Formatter = &logrus.TextFormatter{
+		FullTimestamp: true,
+	}
+	logger.Out = os.Stdout
+
+	level, err := logrus.ParseLevel(logLevel)
 	if err != nil {
-		logger.Warn("Уровень логирования не распознан. Используется уровень 'info'.")
+		logger.Warn("Неверно указан уровень логирования, используется уровень по умолчанию: Info")
 		level = logrus.InfoLevel
 	}
 	logger.SetLevel(level)
 
-	// Настройка формата логирования и других параметров может быть добавлена здесь
-
-	return &Logger{logger: logger}
+	return &Logger{entry: logrus.NewEntry(logger)} // Initialize Logger with a logrus.Entry
 }
 
-// Info логирует сообщение с уровнем Info и дополнительными полями.
-func (l *Logger) Info(msg string, fields map[string]interface{}) {
-	l.logger.WithFields(fields).Info(msg)
+// Info logs a message at level Info on the standard logger.
+func (l *Logger) Info(args ...interface{}) {
+	l.entry.Info(args...)
 }
 
-// Warn логирует сообщение с уровнем Warn и дополнительными полями.
-func (l *Logger) Warn(msg string, fields map[string]interface{}) {
-	l.logger.WithFields(fields).Warn(msg)
+// Warn logs a message at level Warn on the standard logger.
+func (l *Logger) Warn(args ...interface{}) {
+	l.entry.Warn(args...)
 }
 
-// Error логирует сообщение с уровнем Error и дополнительными полями.
-func (l *Logger) Error(msg string, fields map[string]interface{}) {
-	l.logger.WithFields(fields).Error(msg)
+// Error logs a message at level Error on the standard logger.
+func (l *Logger) Error(args ...interface{}) {
+	l.entry.Error(args...)
 }
 
-// Fatal логирует сообщение с уровнем Fatal и дополнительными полями, после чего вызывает os.Exit(1).
-func (l *Logger) Fatal(msg string, fields map[string]interface{}) {
-	l.logger.WithFields(fields).Fatal(msg)
+// Fatal logs a message at level Fatal on the standard logger.
+func (l *Logger) Fatal(args ...interface{}) {
+	l.entry.Fatal(args...)
 }
 
-// Debug логирует сообщение с уровнем Debug и дополнительными полями.
-func (l *Logger) Debug(msg string, fields map[string]interface{}) {
-	l.logger.WithFields(fields).Debug(msg)
+// Debug logs a message at level Debug on the standard logger.
+func (l *Logger) Debug(args ...interface{}) {
+	l.entry.Debug(args...)
 }
 
-// GetUnderlyingLogger возвращает базовый логгер (*logrus.Logger) для прямого доступа, если это необходимо.
-func (l *Logger) GetUnderlyingLogger() *logrus.Logger {
-	return l.logger
+// WithField добавляет одно поле к записи лога и возвращает ILogger для цепочечного вызова.
+func (l *Logger) WithField(key string, value interface{}) ILogger {
+	return &Logger{entry: l.entry.WithField(key, value)} // Correctly return a Logger with an updated *logrus.Entry
 }
 
-func (l *Logger) GetLogrusLogger() interface{} {
-	return l.logger
+// WithFields добавляет множество полей к записи лога и возвращает ILogger для цепочечного вызова.
+func (l *Logger) WithFields(fields map[string]interface{}) ILogger {
+	return &Logger{entry: l.entry.WithFields(fields)} // Correctly return a Logger with an updated *logrus.Entry
 }
