@@ -40,7 +40,7 @@ func TestIntegration_LoadOrdersFromDB(t *testing.T) {
 	defer db.Close()
 
 	logger := logrus.New()
-	cacheService := cache.NewCacheService(logger)
+	cacheService, _ := cache.NewCacheService(logger)
 
 	// Подготовка тестовых данных
 	order := model.Order{OrderUID: "test-order-uid", Items: []model.Item{}}

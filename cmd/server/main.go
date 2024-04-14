@@ -1,102 +1,119 @@
 package main
 
 import (
-	"context"       // Пакет для управления жизненным циклом контекста
-	"fmt"           // Пакет для форматированного ввода и вывода
-	"net/http"      // Пакет для работы с HTTP
-	"os"            // Пакет для взаимодействия с операционной системой
-	"os/signal"     // Пакет для обработки сигналов ОС
-	"path/filepath" // Пакет для работы с путями файлов
-	"syscall"       // Пакет для работы с системными вызовами
+	"context"
+	"database/sql"
+	"errors"
+	"flag"
+	"fmt"
+	httpQS "github.com/ArtemZ007/wb-l0/internal/delivery/http"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/joho/godotenv"   // Пакет для загрузки переменных окружения из файла .env
-	"github.com/sirupsen/logrus" // Пакет для логирования
-
-	myhttp "github.com/ArtemZ007/wb-l0/internal/delivery/http" // Пакет для HTTP-сервера
-	"github.com/ArtemZ007/wb-l0/internal/delivery/nats"        // Пакет для работы с NATS
-	"github.com/ArtemZ007/wb-l0/internal/repository/cache"     // Пакет для работы с кэшем
-	"github.com/ArtemZ007/wb-l0/internal/repository/db"        // Пакет для работы с базой данных
+	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
+	"github.com/ArtemZ007/wb-l0/internal/subscription"
+	"github.com/ArtemZ007/wb-l0/pkg/config"
+	"github.com/ArtemZ007/wb-l0/pkg/logger"
+	_ "github.com/lib/pq"
 )
 
-// initLogger инициализирует и настраивает логгер
-func initLogger() *logrus.Logger {
-	log := logrus.New() // Создание нового экземпляра логгера
-	log.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true, // Включение полной метки времени в логи
-	})
-	level, err := logrus.ParseLevel(os.Getenv("LOG_LEVEL")) // Получение уровня логирования из переменной окружения
+func main() {
+	// Парсинг аргументов командной строки.
+	var cmd string
+	flag.StringVar(&cmd, "cmd", "start", "команда для выполнения: start для запуска, stop для остановки")
+	flag.Parse()
+
+	// Загрузка конфигурации.
+	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.SetLevel(logrus.InfoLevel) // Установка уровня логирования по умолчанию, если произошла ошибка
-	} else {
-		log.SetLevel(level) // Установка уровня логирования из переменной окружения
+		_, _ = fmt.Fprintf(os.Stderr, "Ошибка при загрузке конфигурации: %v\n", err)
+		os.Exit(1)
 	}
-	log.SetOutput(os.Stdout) // Вывод логов в стандартный поток вывода
-	return log
+
+	// Инициализация логгера.
+	appLogger := logger.New(cfg.GetLogLevel())
+
+	switch cmd {
+	case "start":
+		appLogger.Info("Запуск приложения")
+		startApp(cfg, appLogger)
+	case "stop":
+		appLogger.Info("Остановка приложения через CLI не поддерживается")
+	default:
+		appLogger.Info("Неизвестная команда. Доступные команды: start, stop")
+	}
 }
 
-func main() {
-	// Загрузка .env файла один раз в начале
-	envPath, _ := filepath.Abs("../../.env") // Получение абсолютного пути к файлу .env
-	if err := godotenv.Load(envPath); err != nil {
-		logrus.Warn("Файл .env не найден. Продолжение с переменными окружения") // Предупреждение, если файл .env не найден
-	}
+func startApp(cfg config.IConfiguration, appLogger logger.ILogger) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	log := initLogger() // Инициализация логгера
-
-	ctx, cancel := context.WithCancel(context.Background()) // Создание контекста с возможностью отмены
-	defer cancel()                                          // Отмена контекста при завершении работы функции
-
-	cacheService := cache.NewCacheService(log) // Создание сервиса кэша
-
-	// Формирование строки подключения к базе данных из переменных окружения
-	connectionString := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		os.Getenv("DB_HOST"),
-		os.Getenv("DB_PORT"),
-		os.Getenv("DB_USER"),
-		os.Getenv("DB_PASSWORD"),
-		os.Getenv("DB_NAME"))
-
-	// Создание экземпляра сервиса для работы с базой данных
-	dbService, err := db.NewDBService(connectionString, cacheService, log)
+	db, err := sql.Open("postgres", cfg.GetDBConnectionString())
 	if err != nil {
-		log.Fatalf("Ошибка создания сервиса базы данных: %v", err)
+		appLogger.Fatal("Ошибка подключения к базе данных: ", err)
 	}
-
-	// Отложенное закрытие подключения к базе данных
 	defer func() {
-		if err := dbService.Close(); err != nil {
-			log.Errorf("Ошибка закрытия подключения к базе данных: %v", err)
+		if err := db.Close(); err != nil {
+			appLogger.Error("Ошибка при закрытии соединения с базой данных: ", err)
 		}
 	}()
 
-	// Загрузка заказов из базы данных в кэш при старте приложения
-	cacheService.LoadOrdersFromDB(ctx, dbService.DB())
-
-	// Инициализация слушателя сообщений NATS. Это позволяет приложению реагировать на сообщения,
-	// публикуемые в NATS, например, на новые заказы.
-	natsListener, err := nats.NewOrderListener(os.Getenv("NATS_URL"), os.Getenv("NATS_CLUSTER_ID"), os.Getenv("NATS_CLIENT_ID"), cacheService, log)
+	cacheService, err := cache.NewCacheService(appLogger)
 	if err != nil {
-		log.Fatalf("Ошибка инициализации NATS слушателя: %v", err) // Завершение работы приложения в случае ошибки
+		appLogger.Fatal("Ошибка инициализации сервиса кэширования: ", err)
 	}
-	go natsListener.Start(ctx) // Запуск слушателя в отдельной горутине
 
-	// Создание HTTP-обработчика, который будет управлять веб-запросами к приложению.
-	// Это включает в себя обработку запросов на получение информации о заказах.
-	httpHandler := myhttp.NewHandler(cacheService, dbService, log)
-	mux := http.NewServeMux()                                          // Создание мультиплексора для маршрутизации запросов
-	httpHandler.RegisterRoutes(mux)                                    // Регистрация маршрутов в мультиплексоре
-	httpServer := myhttp.NewServer(os.Getenv("SERVER_PORT"), mux, log) // Создание HTTP-сервера
-	go httpServer.Start(ctx)                                           // Запуск HTTP-сервера в отдельной горутине
+	// Assuming logger.New returns a *logger.Logger which implements logger.ILogger
+	// You need to assert the type to *logger.Logger if httpQS.NewHandler expects it.
+	actualLogger, ok := appLogger.(*logger.Logger)
+	if !ok {
+		appLogger.Fatal("appLogger is not of type *logger.Logger")
+	}
 
-	// Подготовка к корректному завершению работы приложения при получении сигнала остановки (например, SIGINT или SIGTERM)
-	signalChan := make(chan os.Signal, 1)                    // Создание канала для приема сигналов
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM) // Настройка приема сигналов прерывания и завершения
+	handler := httpQS.NewHandler(cacheService, actualLogger) // Adjusted to pass the asserted type
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
+		Handler: handler,
+	}
+
 	go func() {
-		<-signalChan                                               // Ожидание сигнала
-		log.Info("Получен сигнал остановки. Завершение работы...") // Логирование получения сигнала
-		cancel()                                                   // Отправка сигнала отмены контекста для корректного завершения работы горутин
+		appLogger.Info("HTTP сервер запущен на порту ", cfg.GetServerPort())
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			appLogger.Fatal("Ошибка при запуске HTTP сервера: ", err)
+		}
 	}()
 
-	<-ctx.Done()                             // Ожидание сигнала отмены контекста
-	log.Info("Приложение завершило работу.") // Логирование завершения работы приложения
+	natsListener, err := subscription.NewOrderListener(cfg.GetNATSURL(), cfg.GetNATSClusterID(), cfg.GetNATSClientID(), cacheService, actualLogger) // Adjusted to pass the asserted type
+	if err != nil {
+		appLogger.Fatal("Ошибка инициализации слушателя NATS: ", err)
+	}
+	go func() {
+		if err := natsListener.Start(ctx); err != nil {
+			appLogger.Error("Ошибка при запуске слушателя NATS: ", err)
+		}
+	}()
+	waitForShutdownSignal(appLogger, func() {
+		appLogger.Info("Остановка приложения")
+		ctxShutDown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(ctxShutDown); err != nil {
+			appLogger.Error("Ошибка при остановке HTTP сервера: ", err)
+		}
+	}, cancel)
+}
+
+func waitForShutdownSignal(log logger.ILogger, shutdownFunc func(), cancelFunc context.CancelFunc) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
+	sig := <-signals
+	log.Info("Получен сигнал для завершения работы: ", sig)
+
+	shutdownFunc()
+	cancelFunc()
+	signal.Stop(signals)
 }

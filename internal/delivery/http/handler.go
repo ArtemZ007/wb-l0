@@ -1,132 +1,82 @@
-package http
+package httpQS
 
 import (
-	"context"
 	"encoding/json"
-	"net/http"
-	"strings"
-	"time"
-
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
-	"github.com/ArtemZ007/wb-l0/internal/repository/db"
-	"github.com/sirupsen/logrus"
+	"net/http"
+
+	"github.com/ArtemZ007/wb-l0/internal/domain/model"
+	"github.com/ArtemZ007/wb-l0/pkg/logger"
 )
 
-// Server структура для HTTP-сервера с конфигурацией и зависимостями.
-type Server struct {
-	port   string
-	server *http.Server
-	logger *logrus.Logger
+// DataService интерфейс, определяющий методы для работы с данными.
+// Этот интерфейс должен быть реализован сервисом, который занимается получением данных.
+type DataService interface {
+	GetData() ([]model.Order, error)
 }
 
-// MyHandler структура для обработчика HTTP-запросов с зависимостями.
-type MyHandler struct {
-	CacheService *cache.Cache
-	DBService    *db.DBService
-	Logger       *logrus.Logger
+// Handler структура обработчика HTTP-запросов.
+type Handler struct {
+	dataService DataService    // Сервис для работы с данными
+	logger      *logger.Logger // Логгер для регистрации событий
 }
 
-// NewServer создает новый HTTP-сервер с заданной конфигурацией.
-func NewServer(port string, handler http.Handler, logger *logrus.Logger) *Server {
-	return &Server{
-		port: port,
-		server: &http.Server{
-			Addr:    ":" + port,
-			Handler: handler,
-		},
-		logger: logger,
+// NewHandler функция для создания нового экземпляра Handler.
+// Принимает в качестве аргументов реализацию интерфейса DataService и экземпляр логгера.
+func NewHandler(dataService cache.ICacheInterface, logger *logger.Logger) *Handler {
+	return &Handler{
+		dataService: dataService,
+		logger:      logger,
 	}
 }
 
-// Start запускает HTTP-сервер.
-func (s *Server) Start(ctx context.Context) {
-	go func() {
-		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			s.logger.Fatalf("Не удалось начать прослушивание на порту %s: %v", s.port, err)
-		}
-	}()
-	s.logger.Infof("Сервер запущен на порту %s", s.port)
-
-	<-ctx.Done()
-
-	ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := s.server.Shutdown(ctxShutdown); err != nil {
-		s.logger.Fatalf("Не удалось корректно завершить работу сервера: %+v", err)
-	}
-	s.logger.Info("Сервер корректно завершил работу")
-}
-
-// NewHandler создает новый экземпляр MyHandler с кэшем, базой данных и логгером.
-func NewHandler(cacheService *cache.Cache, dbService *db.DBService, logger *logrus.Logger) *MyHandler {
-	return &MyHandler{
-		CacheService: cacheService,
-		DBService:    dbService,
-		Logger:       logger,
-	}
-}
-
-// RegisterRoutes регистрирует маршруты для обработчика.
-func (h *MyHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/order/", h.handleOrder)
-	// Дополнительные маршруты могут быть зарегистрированы здесь
-}
-
-// handleOrder обрабатывает запросы к /api/order/.
-func (h *MyHandler) handleOrder(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		h.GetOrder(w, r)
+// ServeHTTP метод для обработки HTTP-запросов.
+// Реализует интерфейс http.Handler, что позволяет использовать экземпляры Handler как обработчики в HTTP-сервере.
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/":
+		h.handleIndex(w, r)
 	default:
-		h.Logger.Warn("Получен запрос с неподдерживаемым методом")
-		writeJSONError(w, "Неподдерживаемый метод", http.StatusMethodNotAllowed, h.Logger)
+		h.handleNotFound(w, r)
 	}
 }
 
-// GetOrder обрабатывает GET-запросы для получения данных о заказе по ID.
-func (h *MyHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
-	orderID := strings.TrimPrefix(r.URL.Path, "/api/order/")
-	order, found := h.CacheService.GetOrder(orderID)
-	if !found {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		var err error
-		order, err = h.DBService.GetOrderByID(ctx, orderID)
-		if err != nil {
-			h.Logger.WithField("orderID", orderID).WithError(err).Warn("Заказ не найден")
-			writeJSONError(w, "Заказ не найден", http.StatusNotFound, h.Logger)
-			return
-		}
-
-		h.CacheService.AddOrUpdateOrder(order)
+// handleIndex метод для обработки запросов к корневому маршруту.
+func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.writeJSONError(w, "Неподдерживаемый метод", http.StatusMethodNotAllowed)
+		return
 	}
 
-	h.Logger.WithField("orderID", orderID).Info("Заказ успешно извлечен")
-	writeJSONResponse(w, order, http.StatusOK, h.Logger)
+	data, err := h.dataService.GetData()
+	if err != nil {
+		h.logger.Error("Ошибка при получении данных: ", err)
+		h.writeJSONError(w, "Ошибка сервера", http.StatusInternalServerError)
+		return
+	}
+
+	h.writeJSONResponse(w, data, http.StatusOK)
 }
 
-func writeJSONResponse(w http.ResponseWriter, data interface{}, statusCode int, logger *logrus.Logger) {
+// writeJSONResponse метод для отправки ответа в формате JSON.
+func (h *Handler) writeJSONResponse(w http.ResponseWriter, data interface{}, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		logger.WithError(err).Error("Ошибка при кодировании ответа в JSON")
+		h.logger.Error("Не удалось закодировать ответ в JSON: ", err)
 	}
 }
 
-func writeJSONError(w http.ResponseWriter, message string, statusCode int, logger *logrus.Logger) {
+// writeJSONError метод для отправки сообщения об ошибке в формате JSON.
+func (h *Handler) writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
-		logger.WithError(err).Error("Ошибка при кодировании ошибки в JSON")
+		h.logger.Error("Ошибка при кодировании ошибки в JSON: ", err)
 	}
 }
-func (s *Server) Shutdown(ctx context.Context) error {
-	// Устанавливаем дедлайн для завершения выдающихся запросов.
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 
-	// Пытаемся корректно завершить работу сервера.
-	return s.server.Shutdown(ctx)
+// handleNotFound метод для обработки несуществующих маршрутов.
+func (h *Handler) handleNotFound(w http.ResponseWriter, _ *http.Request) {
+	h.writeJSONError(w, "Не найдено", http.StatusNotFound)
 }

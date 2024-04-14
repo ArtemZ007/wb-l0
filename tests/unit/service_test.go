@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ArtemZ007/wb-l0/internal/delivery/nats"
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
 	"github.com/nats-io/stan.go"
 	"github.com/sirupsen/logrus/hooks/test"
