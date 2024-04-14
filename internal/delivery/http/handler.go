@@ -1,132 +1,86 @@
+// Package http предоставляет утилиты сервера HTTP для обработки запросов и ответов.
+// Это включает в себя маршрутизацию и обслуживание HTTP-запросов, обработку ошибок и кодирование ответов.
+//
+// Автор: ArtemZ007
 package http
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
-	"github.com/ArtemZ007/wb-l0/internal/repository/db"
-	"github.com/sirupsen/logrus"
+	"github.com/ArtemZ007/wb-l0/pkg/logger"
 )
 
-// Server структура для HTTP-сервера с конфигурацией и зависимостями.
-type Server struct {
-	port   string
-	server *http.Server
-	logger *logrus.Logger
+// Handler структура обработчика HTTP-запросов. Отвечает за обработку входящих запросов и взаимодействие с кэшем.
+type Handler struct {
+	cacheService cache.Cache    // Используем интерфейс Cache для улучшения интеграции с сервисом кэширования.
+	logger       *logger.Logger // Используем конкретную реализацию Logger для унификации логирования.
 }
 
-// MyHandler структура для обработчика HTTP-запросов с зависимостями.
-type MyHandler struct {
-	CacheService *cache.Cache
-	DBService    *db.DBService
-	Logger       *logrus.Logger
-}
-
-// NewServer создает новый HTTP-сервер с заданной конфигурацией.
-func NewServer(port string, handler http.Handler, logger *logrus.Logger) *Server {
-	return &Server{
-		port: port,
-		server: &http.Server{
-			Addr:    ":" + port,
-			Handler: handler,
-		},
-		logger: logger,
+// NewHandler создает новый экземпляр Handler. Принимает сервис кэширования и экземпляр логгера.
+func NewHandler(cacheService cache.Cache, logger *logger.Logger) *Handler {
+	return &Handler{
+		cacheService: cacheService,
+		logger:       logger,
 	}
 }
 
-// Start запускает HTTP-сервер.
-func (s *Server) Start(ctx context.Context) {
-	go func() {
-		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			s.logger.Fatalf("Не удалось начать прослушивание на порту %s: %v", s.port, err)
-		}
-	}()
-	s.logger.Infof("Сервер запущен на порту %s", s.port)
-
-	<-ctx.Done()
-
-	ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := s.server.Shutdown(ctxShutdown); err != nil {
-		s.logger.Fatalf("Не удалось корректно завершить работу сервера: %+v", err)
-	}
-	s.logger.Info("Сервер корректно завершил работу")
-}
-
-// NewHandler создает новый экземпляр MyHandler с кэшем, базой данных и логгером.
-func NewHandler(cacheService *cache.Cache, dbService *db.DBService, logger *logrus.Logger) *MyHandler {
-	return &MyHandler{
-		CacheService: cacheService,
-		DBService:    dbService,
-		Logger:       logger,
-	}
-}
-
-// RegisterRoutes регистрирует маршруты для обработчика.
-func (h *MyHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/order/", h.handleOrder)
-	// Дополнительные маршруты могут быть зарегистрированы здесь
-}
-
-// handleOrder обрабатывает запросы к /api/order/.
-func (h *MyHandler) handleOrder(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		h.GetOrder(w, r)
+// ServeHTTP метод для обработки HTTP-запросов. Определяет маршруты и вызывает соответствующие обработчики.
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/order":
+		h.handleGetOrder(w, r)
 	default:
-		h.Logger.Warn("Получен запрос с неподдерживаемым методом")
-		writeJSONError(w, "Неподдерживаемый метод", http.StatusMethodNotAllowed, h.Logger)
+		h.handleNotFound(w, r)
 	}
 }
 
-// GetOrder обрабатывает GET-запросы для получения данных о заказе по ID.
-func (h *MyHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
-	orderID := strings.TrimPrefix(r.URL.Path, "/api/order/")
-	order, found := h.CacheService.GetOrder(orderID)
+// handleGetOrder обрабатывает запросы на получение заказа по его ID. Возвращает данные заказа в формате JSON.
+func (h *Handler) handleGetOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.writeJSONError(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+		return
+	}
+
+	orderID := r.URL.Query().Get("id")
+	if orderID == "" {
+		h.writeJSONError(w, "Не указан ID заказа", http.StatusBadRequest)
+		return
+	}
+
+	order, found := h.cacheService.GetOrder(orderID)
 	if !found {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		var err error
-		order, err = h.DBService.GetOrderByID(ctx, orderID)
-		if err != nil {
-			h.Logger.WithField("orderID", orderID).WithError(err).Warn("Заказ не найден")
-			writeJSONError(w, "Заказ не найден", http.StatusNotFound, h.Logger)
-			return
-		}
-
-		h.CacheService.AddOrUpdateOrder(order)
+		h.logger.Error("Заказ не найден", map[string]interface{}{"orderID": orderID})
+		h.writeJSONError(w, "Заказ не найден", http.StatusNotFound)
+		return
 	}
 
-	h.Logger.WithField("orderID", orderID).Info("Заказ успешно извлечен")
-	writeJSONResponse(w, order, http.StatusOK, h.Logger)
+	h.logger.Info("Заказ успешно найден и отправлен", map[string]interface{}{"orderID": orderID})
+	h.writeJSONResponse(w, order, http.StatusOK)
 }
 
-func writeJSONResponse(w http.ResponseWriter, data interface{}, statusCode int, logger *logrus.Logger) {
+// writeJSONResponse отправляет ответ в формате JSON. Устанавливает необходимые заголовки и сериализует данные.
+func (h *Handler) writeJSONResponse(w http.ResponseWriter, data interface{}, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		logger.WithError(err).Error("Ошибка при кодировании ответа в JSON")
+		h.logger.Error("Ошибка при сериализации данных в JSON", map[string]interface{}{"error": err})
+		http.Error(w, "Ошибка сервера", http.StatusInternalServerError)
 	}
 }
 
-func writeJSONError(w http.ResponseWriter, message string, statusCode int, logger *logrus.Logger) {
+// writeJSONError отправляет сообщение об ошибке в формате JSON. Устанавливает необходимые заголовки.
+func (h *Handler) writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
-		logger.WithError(err).Error("Ошибка при кодировании ошибки в JSON")
+		h.logger.Error("Ошибка при отправке сообщения об ошибке", map[string]interface{}{"error": err})
+		http.Error(w, "Ошибка сервера", http.StatusInternalServerError)
 	}
 }
-func (s *Server) Shutdown(ctx context.Context) error {
-	// Устанавливаем дедлайн для завершения выдающихся запросов.
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 
-	// Пытаемся корректно завершить работу сервера.
-	return s.server.Shutdown(ctx)
+// handleNotFound обрабатывает несуществующие маршруты. Возвращает сообщение об ошибке.
+func (h *Handler) handleNotFound(w http.ResponseWriter, _ *http.Request) {
+	h.writeJSONError(w, "Страница не найдена", http.StatusNotFound)
 }

@@ -1,3 +1,11 @@
+// Package cache_test contains tests for the cache service functionality within the application.
+// These tests cover the creation of a new cache service, adding, updating, and retrieving orders from the cache,
+// as well as loading orders from a database into the cache.
+//
+// Author: Your Name or Your Organization's Name
+// Date: Date of Creation or Last Update
+// License: Applicable License (e.g., MIT, Apache 2.0, etc.)
+
 package cache_test
 
 import (
