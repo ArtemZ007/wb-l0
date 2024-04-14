@@ -5,89 +5,64 @@ package cache
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
+	"fmt"
 	"sync"
 
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
+	"github.com/ArtemZ007/wb-l0/internal/repository/database"
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 )
 
-// Cache определяет интерфейс для операций с кэшем.
 type Cache interface {
-	LoadOrdersFromDB(ctx context.Context, db *sql.DB) error
 	GetOrder(id string) (*model.Order, bool)
 	GetAllOrderIDs() []string
-	DeleteOrder(id string) bool
 	AddOrUpdateOrder(order *model.Order) error
 	GetData() ([]model.Order, error)
+	ProcessOrder(ctx context.Context, order *model.Order) error
 }
 
-// cacheImpl структура, реализующая Cache.
-type cacheImpl struct {
-	mu     sync.RWMutex
-	orders map[string]*model.Order
-	logger *logger.Logger
+type Service struct {
+	mu        sync.RWMutex
+	orders    map[string]*model.Order
+	logger    *logger.Logger
+	dbService *database.Service
+	orderChan chan *model.Order
 }
 
-// New создает и возвращает новый экземпляр кэша.
-func New(logger *logger.Logger) Cache {
-	return &cacheImpl{
-		orders: make(map[string]*model.Order),
-		logger: logger,
+// NewCacheService creates and returns a new Cache instance.
+func NewCacheService(logger *logger.Logger, dbService *database.Service) Cache {
+	return &Service{
+		orders:    make(map[string]*model.Order),
+		logger:    logger,
+		dbService: dbService,
+		orderChan: make(chan *model.Order),
 	}
 }
-
-// LoadOrdersFromDB загружает заказы из базы данных в кэш.
-// LoadOrdersFromDB загружает заказы из базы данных в кэш.
-func (c *cacheImpl) LoadOrdersFromDB(ctx context.Context, db *sql.DB) error {
-	c.logger.Info("Начинаем загрузку заказов из базы данных в кэш", nil)
-	query := "SELECT order_uid FROM orders" // Ensure you're selecting order_data as well
-
-	rows, err := db.QueryContext(ctx, query)
+func (c *Service) InitCacheWithDBOrders(ctx context.Context) {
+	orders, err := c.dbService.ListOrders(ctx)
 	if err != nil {
-		c.logger.Error("Ошибка выполнения запроса к базе данных", map[string]interface{}{"error": err})
-		return err
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			c.logger.Error("Ошибка при закрытии строк базы данных", map[string]interface{}{"error": err})
-		}
-	}()
-
-	for rows.Next() {
-		var orderUID string
-		var data []byte
-		if err := rows.Scan(&orderUID, &data); err != nil {
-			c.logger.Error("Ошибка чтения строки из базы данных", map[string]interface{}{"error": err})
-			continue
-		}
-
-		var order model.Order
-		if err := json.Unmarshal(data, &order); err != nil {
-			c.logger.Error("Ошибка десериализации данных заказа", map[string]interface{}{"error": err})
-			continue
-		}
-
-		if err := c.AddOrUpdateOrder(&order); err != nil {
-			c.logger.Error("Ошибка добавления или обновления заказа в кэше", map[string]interface{}{"error": err})
-			continue
-		}
+		c.logger.Error("Ошибка при получении заказов из базы данных", map[string]interface{}{"error": err})
+		return
 	}
 
-	if err := rows.Err(); err != nil {
-		c.logger.Error("Ошибка при обработке результатов запроса", map[string]interface{}{"error": err})
-		return err
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, order := range orders {
+		c.orders[order.OrderUID] = &order // Предполагается, что order.OrderUID уникальный идентификатор заказа
 	}
-
-	c.logger.Info("Заказы успешно загружены в кэш из базы данных", nil)
-	return nil
+	c.logger.Info(fmt.Sprintf("Кэш инициализирован %d заказами", len(orders)))
 }
 
-// Остальные методы остаются без изменений, но важно следить за тем, чтобы логгирование было информативным и на русском языке.
+func (c *Service) ProcessOrder(ctx context.Context, order *model.Order) error {
+	select {
+	case c.orderChan <- order:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
-// GetOrder извлекает заказ по его ID из кэша.
-func (c *cacheImpl) GetOrder(id string) (*model.Order, bool) {
+func (c *Service) GetOrder(id string) (*model.Order, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -95,8 +70,7 @@ func (c *cacheImpl) GetOrder(id string) (*model.Order, bool) {
 	return order, exists
 }
 
-// GetAllOrderIDs возвращает список всех ID заказов в кэше.
-func (c *cacheImpl) GetAllOrderIDs() []string {
+func (c *Service) GetAllOrderIDs() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -107,20 +81,7 @@ func (c *cacheImpl) GetAllOrderIDs() []string {
 	return ids
 }
 
-// DeleteOrder удаляет заказ из кэша по его ID.
-func (c *cacheImpl) DeleteOrder(id string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if _, exists := c.orders[id]; exists {
-		delete(c.orders, id)
-		return true
-	}
-	return false
-}
-
-// AddOrUpdateOrder добавляет новый заказ в кэш или обновляет существующий.
-func (c *cacheImpl) AddOrUpdateOrder(order *model.Order) error {
+func (c *Service) AddOrUpdateOrder(order *model.Order) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -128,8 +89,7 @@ func (c *cacheImpl) AddOrUpdateOrder(order *model.Order) error {
 	return nil
 }
 
-// GetData возвращает все заказы из кэша.
-func (c *cacheImpl) GetData() ([]model.Order, error) {
+func (c *Service) GetData() ([]model.Order, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 

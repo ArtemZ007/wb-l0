@@ -1,85 +1,112 @@
-// Package subscription Пакет subscription предоставляет функциональность для прослушивания сообщений NATS Streaming
-// и их соответствующей обработки. Включает реализацию слушателя,
-// который может подписываться на определенные темы и обрабатывать входящие сообщения,
-// десериализуя их в объекты заказов и сохраняя их в базу данных.
 package subscription
 
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
-	"github.com/ArtemZ007/wb-l0/internal/repository/database"
+	"github.com/ArtemZ007/wb-l0/internal/interfaces"
+	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
+	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	"github.com/nats-io/stan.go"
-	"github.com/sirupsen/logrus"
 )
 
-// Listener описывает слушателя сообщений из NATS Streaming.
-type Listener struct {
-	orderRepo *database.Service // Использование конкретного типа для репозитория
-	logger    *logrus.Logger    // Использование *logrus.Logger для логгирования
+// OrderListener реализует слушатель сообщений NATS Streaming для заказов.
+type OrderListener struct {
+	sc           stan.Conn
+	cacheService cache.Cache
+	orderService interfaces.IOrderService // Изменено на IOrderService
+	logger       logger.ILogger
+	subscription stan.Subscription
 }
 
-// NewListener создает новый экземпляр Listener.
-// Принимает репозиторий для работы с заказами и логгер.
-func NewListener(orderRepo *database.Service, logger *logrus.Logger) *Listener {
-	return &Listener{
-		orderRepo: orderRepo,
-		logger:    logger,
-	}
-}
-
-// Start запускает слушателя для прослушивания сообщений из NATS Streaming.
-// Параметры: ctx для контроля завершения, url, clusterID, clientID, subject для подключения к NATS.
-func (l *Listener) Start(ctx context.Context, url, clusterID, clientID, subject string) error {
-	l.logger.Infof("Запуск слушателя NATS Streaming. URL: %s, ClusterID: %s, ClientID: %s, Subject: %s", url, clusterID, clientID, subject)
-
-	sc, err := stan.Connect(clusterID, clientID, stan.NatsURL(url))
+// NewOrderListener создает новый экземпляр OrderListener.
+func NewOrderListener(natsURL, clusterID, clientID string, cacheService cache.Cache, orderService interfaces.IOrderService, logger *logger.Logger) (*OrderListener, error) {
+	// Логирование процесса подключения к NATS Streaming
+	logger.Info("Подключение к NATS Streaming ", natsURL, " ", clusterID, " ", clientID, " ")
+	sc, err := stan.Connect(clusterID, clientID, stan.NatsURL(natsURL))
 	if err != nil {
-		l.logger.WithError(err).Error("Ошибка подключения к NATS Streaming.")
+		logger.Error("Не удалось подключиться к NATS Streaming", err)
+		return nil, err
+	}
+	return &OrderListener{
+		sc:           sc,
+		cacheService: cacheService,
+		orderService: orderService, // Сохраняем переданный orderService
+		logger:       logger,
+	}, nil
+}
+
+// Start Ваши методы Start и Stop останутся без изменений, за исключением использования orderService для работы с заказами.
+// Start Измененный конструктор для включения orderService
+// Измененный метод Start для включения логики сохранения в базу данных
+// Start начинает прослушивание сообщений на заданную тему.
+func (ol *OrderListener) Start(ctx context.Context) error {
+	natsSubject := "orders"
+	var err error
+	ol.subscription, err = ol.sc.Subscribe(natsSubject, func(msg *stan.Msg) {
+		var order model.Order
+		if err := json.Unmarshal(msg.Data, &order); err != nil {
+			ol.logger.Error("Ошибка при десериализации заказа", err)
+			return
+		}
+
+		// Попытка сохранить заказ с использованием сервиса заказов
+		if err := ol.orderService.SaveOrder(ctx, &order); err != nil {
+			ol.logger.Error("Ошибка при сохранении заказа в базу данных", err)
+			return
+		}
+
+		// Логирование успешного сохранения заказа в базу данных
+		ol.logger.Info("Заказ сохранен в базу данных ", order.OrderUID)
+
+		// Попытка сохранить заказ в кэш
+		// Попытка сохранить заказ в кэш
+		if err := ol.cacheService.AddOrUpdateOrder(&order); err != nil {
+			ol.logger.Error("Ошибка при сохранении заказа в кэш", err)
+			return
+		}
+
+		// Логирование успешного сохранения заказа в кэш
+		ol.logger.Info("Заказ сохранен в кэш ", order.OrderUID)
+
+		if err := msg.Ack(); err != nil {
+			ol.logger.Error("Ошибка подтверждения сообщения", err)
+		}
+	}, stan.DurableName("order-listener-durable"), stan.SetManualAckMode(), stan.AckWait(30*time.Second))
+
+	if err != nil {
+		ol.logger.Error("Ошибка при подписке на тему", "subject", natsSubject, "error", err)
 		return err
 	}
-	defer func() {
-		if err := sc.Close(); err != nil {
-			l.logger.WithError(err).Error("Ошибка при закрытии соединения с NATS Streaming.")
+
+	// Логирование успешной подписки на канал
+	ol.logger.Info("Успешно подписан на канал ", natsSubject)
+
+	go func() {
+		<-ctx.Done()
+		if err := ol.Stop(); err != nil {
+			ol.logger.Error("Ошибка при остановке слушателя", err)
 		}
 	}()
 
-	sub, err := sc.Subscribe(subject, func(msg *stan.Msg) {
-		l.handleMessage(ctx, msg) // Передаем контекст в обработчик сообщений
-	}, stan.DurableName("my-durable"))
-	if err != nil {
-		l.logger.WithError(err).Error("Ошибка подписки на NATS Streaming.")
-		return err
-	}
-	defer func() {
-		if err := sub.Unsubscribe(); err != nil {
-			l.logger.WithError(err).Error("Ошибка при отписке от NATS Streaming.")
-		}
-	}()
-
-	<-ctx.Done()
-	l.logger.Info("Остановка слушателя NATS Streaming.")
 	return nil
 }
 
-// handleMessage обрабатывает полученные сообщения, десериализуя их в объекты заказов и сохраняя их в базу данных.
-func (l *Listener) handleMessage(ctx context.Context, msg *stan.Msg) {
-	var order model.Order
-	if err := json.Unmarshal(msg.Data, &order); err != nil {
-		l.logger.WithError(err).Error("Ошибка десериализации сообщения.")
-		return
+// Stop останавливает слушателя и закрывает соединение с NATS Streaming.
+func (ol *OrderListener) Stop() error {
+	// Отписка от темы, если подписка была инициализирована
+	if ol.subscription != nil {
+		if err := ol.subscription.Unsubscribe(); err != nil {
+			ol.logger.Error("Ошибка при отписке от темы", err)
+			return err
+		}
 	}
-
-	if err := l.orderRepo.SaveOrder(ctx, &order); err != nil {
-		l.logger.WithError(err).WithField("orderUID", order.OrderUID).Error("Ошибка сохранения заказа в базу данных.")
-		return
+	// Закрытие соединения с NATS Streaming
+	if err := ol.sc.Close(); err != nil {
+		ol.logger.Error("Ошибка при закрытии соединения с NATS Streaming", err)
+		return err
 	}
-
-	l.logger.WithField("orderUID", order.OrderUID).Info("Заказ успешно сохранен в базу данных.")
-}
-
-// Stop останавливает слушателя и освобождает ресурсы.
-func (l *Listener) Stop() {
-	// Здесь должна быть реализация остановки слушателя, если это необходимо.
-	l.logger.Info("Слушатель NATS Streaming остановлен.")
+	return nil
 }

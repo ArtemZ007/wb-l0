@@ -1,115 +1,87 @@
 package validator
 
 import (
-	"regexp"
-	"strings"
-	"time"
+	"encoding/json"
+	"fmt"
+	"github.com/ArtemZ007/wb-l0/internal/domain/model"
+	"github.com/go-playground/validator/v10"
+	"github.com/sirupsen/logrus"
 )
 
-// Validator предоставляет интерфейс для валидации данных.
-type Validator interface {
-	Validate() []string
+// ValidationError представляет ошибку валидации для поля.
+type ValidationError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
 }
 
-// UserData представляет данные пользователя, которые необходимо валидировать.
-type UserData struct {
-	Email    string
-	Username string
-	Password string
+// Service предоставляет методы для валидации моделей.
+type Service struct {
+	validate *validator.Validate
+	logger   *logrus.Logger
 }
 
-// OrderData представляет данные заказа, которые необходимо валидировать.
-type OrderData struct {
-	OrderUID      string
-	TrackNumber   string
-	DeliveryName  string
-	DeliveryPhone string
-	DeliveryZip   string
-	DeliveryCity  string
-	DeliveryEmail string
-	PaymentAmount int
-	PaymentDt     int64
-	Items         []ItemData
-	DateCreated   string
+// NewService создает новый экземпляр Service.
+func _(logger *logrus.Logger) *Service {
+	v := validator.New()
+	// Здесь можно зарегистрировать кастомные валидационные функции или теги
+	return &Service{
+		validate: v,
+		logger:   logger,
+	}
 }
 
-// ItemData представляет данные товара в заказе.
-type ItemData struct {
-	ChrtID int
-	Price  int
-	Name   string
-	Brand  string
+// ValidateOrder валидирует заказ, используя теги в структуре Order.
+func (s *Service) ValidateOrder(orderData *model.Order) []*ValidationError {
+	var validationErrors []*ValidationError
+
+	err := s.validate.Struct(orderData)
+	if err != nil {
+		for _, err := range err.(validator.ValidationErrors) {
+			validationError := &ValidationError{
+				Field:   err.Field(),
+				Message: s.customErrorMessage(err),
+			}
+			validationErrors = append(validationErrors, validationError)
+		}
+	}
+
+	return validationErrors
 }
 
-// Validate для UserData.
-func (u *UserData) Validate() []string {
-	var errors []string
-
-	if !isValidEmail(u.Email) {
-		errors = append(errors, "Email is not valid")
+// customErrorMessage возвращает кастомное сообщение об ошибке на основе типа валидации.
+func (s *Service) customErrorMessage(err validator.FieldError) string {
+	// Здесь можно добавить логику для разных типов ошибок
+	// Например, использовать switch err.Tag() для разных кейсов
+	switch err.Tag() {
+	case "required":
+		return fmt.Sprintf("Поле %s обязательно для заполнения", err.Field())
+	case "e164":
+		return fmt.Sprintf("Поле %s должно быть в формате E.164", err.Field())
+	case "email":
+		return fmt.Sprintf("Поле %s должно быть действительным адресом электронной почты", err.Field())
+	case "uuid4":
+		return fmt.Sprintf("Поле %s должно быть действительным UUID v4", err.Field())
+	case "gt":
+		return fmt.Sprintf("Поле %s должно быть больше указанного значения", err.Field())
+	case "gte":
+		return fmt.Sprintf("Поле %s должно быть больше или равно указанному значению", err.Field())
+	default:
+		return fmt.Sprintf("Неверное значение поля %s", err.Field())
 	}
-	if len(u.Username) < 3 {
-		errors = append(errors, "Username must be at least 3 characters long")
-	}
-	if len(u.Password) < 6 {
-		errors = append(errors, "Password must be at least 6 characters long")
-	}
-
-	return errors
 }
 
-// Validate для OrderData.
-func (o *OrderData) Validate() []string {
-	var errors []string
-
-	if o.OrderUID == "" {
-		errors = append(errors, "OrderUID is required")
-	}
-	if !isValidPhone(o.DeliveryPhone) {
-		errors = append(errors, "Delivery phone is not valid")
-	}
-	if o.PaymentAmount <= 0 {
-		errors = append(errors, "Payment amount must be greater than 0")
-	}
-	if !isValidDate(o.DateCreated) {
-		errors = append(errors, "Date created is not valid")
-	}
-	for _, item := range o.Items {
-		errors = append(errors, item.Validate()...)
+// ValidateAndDeserializeOrder валидирует и десериализует JSON в структуру Order.
+func (s *Service) ValidateAndDeserializeOrder(data []byte) (*model.Order, []*ValidationError) {
+	var order model.Order
+	if err := json.Unmarshal(data, &order); err != nil {
+		s.logger.WithError(err).Error("Ошибка десериализации заказа")
+		return nil, []*ValidationError{{Message: "Ошибка десериализации JSON"}}
 	}
 
-	return errors
-}
-
-// Validate для ItemData.
-func (i *ItemData) Validate() []string {
-	var errors []string
-
-	if i.ChrtID <= 0 {
-		errors = append(errors, "Item ChrtID must be greater than 0")
-	}
-	if i.Price <= 0 {
-		errors = append(errors, "Item price must be greater than 0")
-	}
-	if i.Name == "" {
-		errors = append(errors, "Item name is required")
+	validationErrors := s.ValidateOrder(&order)
+	if len(validationErrors) > 0 {
+		return nil, validationErrors
 	}
 
-	return errors
-}
-
-// Вспомогательные функции валидации.
-func isValidEmail(email string) bool {
-	emailRegex := regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
-	return emailRegex.MatchString(strings.TrimSpace(email))
-}
-
-func isValidPhone(phone string) bool {
-	phoneRegex := regexp.MustCompile(`^\+\d{1,3}\d{3,}$`)
-	return phoneRegex.MatchString(strings.TrimSpace(phone))
-}
-
-func isValidDate(dateStr string) bool {
-	_, err := time.Parse(time.RFC3339, dateStr)
-	return err == nil
+	return &order, nil
 }
