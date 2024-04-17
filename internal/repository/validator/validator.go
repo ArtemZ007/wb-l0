@@ -3,6 +3,7 @@ package validator
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
 	"github.com/go-playground/validator/v10"
 	"github.com/sirupsen/logrus"

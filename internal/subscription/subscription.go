@@ -3,13 +3,12 @@ package subscription
 import (
 	"context"
 	"encoding/json"
-	"time"
-
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
 	"github.com/ArtemZ007/wb-l0/internal/interfaces"
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	"github.com/nats-io/stan.go"
+	"time"
 )
 
 // OrderListener реализует слушатель сообщений NATS Streaming для заказов.
@@ -43,6 +42,7 @@ func NewOrderListener(natsURL, clusterID, clientID string, cacheService cache.Ca
 // Измененный метод Start для включения логики сохранения в базу данных
 // Start начинает прослушивание сообщений на заданную тему.
 func (ol *OrderListener) Start(ctx context.Context) error {
+	// Your existing code...
 	natsSubject := "orders"
 	var err error
 	ol.subscription, err = ol.sc.Subscribe(natsSubject, func(msg *stan.Msg) {
@@ -57,11 +57,9 @@ func (ol *OrderListener) Start(ctx context.Context) error {
 			ol.logger.Error("Ошибка при сохранении заказа в базу данных", err)
 			return
 		}
-
 		// Логирование успешного сохранения заказа в базу данных
 		ol.logger.Info("Заказ сохранен в базу данных ", order.OrderUID)
 
-		// Попытка сохранить заказ в кэш
 		// Попытка сохранить заказ в кэш
 		if err := ol.cacheService.AddOrUpdateOrder(&order); err != nil {
 			ol.logger.Error("Ошибка при сохранении заказа в кэш", err)
