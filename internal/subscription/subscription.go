@@ -57,11 +57,9 @@ func (ol *OrderListener) Start(ctx context.Context) error {
 			ol.logger.Error("Ошибка при сохранении заказа в базу данных", err)
 			return
 		}
-
 		// Логирование успешного сохранения заказа в базу данных
 		ol.logger.Info("Заказ сохранен в базу данных ", order.OrderUID)
 
-		// Попытка сохранить заказ в кэш
 		// Попытка сохранить заказ в кэш
 		if err := ol.cacheService.AddOrUpdateOrder(&order); err != nil {
 			ol.logger.Error("Ошибка при сохранении заказа в кэш", err)

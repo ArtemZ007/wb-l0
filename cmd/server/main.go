@@ -1,3 +1,5 @@
+// Пакет main является точкой входа приложения. Он инициализирует и запускает все необходимые сервисы.
+// Автор: ArtemZ007
 package main
 
 import (
@@ -6,13 +8,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	httpQS "github.com/ArtemZ007/wb-l0/internal/delivery/http"
-	"github.com/ArtemZ007/wb-l0/internal/repository/database"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	httpQS "github.com/ArtemZ007/wb-l0/internal/delivery/http"
+	"github.com/ArtemZ007/wb-l0/internal/repository/database"
 
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"github.com/ArtemZ007/wb-l0/internal/subscription"
