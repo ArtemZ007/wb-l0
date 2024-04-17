@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand"
 	"time"
@@ -19,23 +20,21 @@ func generateRandomOrder() model.Order {
 	deliveryCost := rand.Intn(1000) + 100
 	goodsTotal := rand.Intn(10000) + 500
 	customFee := rand.Intn(1000)
-	chrtID := rand.Intn(100000)
+	chrtID := rand.Intn(20)
 	price := rand.Intn(10000) + 100
 	sale := rand.Intn(100)
 	totalPrice := rand.Intn(10000) + 100
 	nmID := rand.Intn(100000)
-	status := rand.Intn(100) // Corrected to match the expected type
+	status := rand.Intn(5) + 1 // Генерирует числа от 1 до 5
 
-	// Convert literals to pointers for all fields that require pointers
-	trackNumber := uuid.New().String()
 	entry := "entry_" + uuid.New().String()
 	name := "Name_" + uuid.New().String()
-	phone := "+7900" + uuid.New().String()
+	phone := fmt.Sprintf("+7%010d", rand.Intn(10000000000)) // Генерация номера телефона в формате +7XXXXXXXXXX
 	zip := "Zip_" + uuid.New().String()
 	city := "City_" + uuid.New().String()
 	address := "Address_" + uuid.New().String()
 	region := "Region_" + uuid.New().String()
-	email := "Email_" + uuid.New().String()
+	email := fmt.Sprintf("test%d@example.com", rand.Intn(100000)) // Простая генерация email
 	transaction := uuid.New().String()
 	requestID := uuid.New().String()
 	provider := "Provider_" + uuid.New().String()
@@ -50,11 +49,8 @@ func generateRandomOrder() model.Order {
 	deliveryService := "DeliveryService_" + uuid.New().String()
 	shardkey := uuid.New().String()
 	oofShard := uuid.New().String()
-
-	// Generate a new UUID for smID
-	// Generate a random int for smID
-	// Generate a random int for smID
-	smID := rand.Int() // This generates a random int
+	smID := rand.Int()                 // This generates a random int
+	trackNumber := uuid.New().String() // Corrected: Definition of trackNumber
 
 	return model.Order{
 		OrderUID:    uuid.New().String(),
@@ -101,7 +97,7 @@ func generateRandomOrder() model.Order {
 		CustomerID:        &customerID,
 		DeliveryService:   &deliveryService,
 		Shardkey:          &shardkey,
-		SMID:              &smID, // Fixed by defining smID above
+		SMID:              &smID,
 		DateCreated:       time.Now().Format(time.RFC3339),
 		OofShard:          &oofShard,
 	}

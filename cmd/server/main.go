@@ -1,3 +1,5 @@
+// Пакет main является точкой входа приложения. Он инициализирует и запускает все необходимые сервисы.
+// Автор: ArtemZ007
 package main
 
 import (
@@ -6,13 +8,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	httpQS "github.com/ArtemZ007/wb-l0/internal/delivery/http"
-	"github.com/ArtemZ007/wb-l0/internal/repository/database"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	httpQS "github.com/ArtemZ007/wb-l0/internal/delivery/http"
+	"github.com/ArtemZ007/wb-l0/internal/repository/database"
 
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"github.com/ArtemZ007/wb-l0/internal/subscription"
@@ -61,16 +64,21 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 			appLogger.Error("Ошибка при закрытии соединения с базой данных: ", err)
 		}
 	}()
-
+	//Сервис работы с базой данных
 	service, err := database.NewService(db, appLogger)
 	if err != nil {
 		appLogger.Fatal("Ошибка при создании сервиса: ", err)
 	}
 
-	// Since appLogger is already of type *logger.Logger, we can use it directly
-	cacheService := cache.NewCacheService(appLogger, service)
+	// Создание экземпляра cache.Service
+	// Создание экземпляра cache.Service
+	cacheService := cache.NewCacheService(appLogger, service) // Renamed variable for clarity and convention
 
-	handler := httpQS.NewHandler(cacheService, appLogger)
+	// Correctly calling InitCacheWithDBOrders without attempting to capture a return value
+	cacheService.InitCacheWithDBOrders(ctx)
+	appLogger.Info("Инициализация кэша заказами из базы данных выполнена")
+
+	handler := httpQS.NewHandler(cacheService, appLogger) // Now correctly references cacheService
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
 		Handler: handler,

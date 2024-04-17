@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -16,6 +17,7 @@ type ILogger interface {
 	WithField(key string, value interface{}) *Logger
 	WithFields(fields map[string]interface{}) *Logger
 	WithError(err error) *logrus.Entry
+	Infof(format string, args ...interface{})
 }
 
 // Logger реализует ILogger и обеспечивает логирование.
@@ -26,6 +28,10 @@ type Logger struct {
 // WithError adds an error to the log entry.
 func (l *Logger) WithError(err error) *logrus.Entry {
 	return l.entry.WithError(err)
+}
+func (l *Logger) Infof(format string, args ...interface{}) {
+	// Предполагая, что у Logger есть метод для записи на уровне информации, например, Info.
+	l.Info(fmt.Sprintf(format, args...))
 }
 
 // New создает и возвращает новый экземпляр Logger, настроенный с уровнем логирования.

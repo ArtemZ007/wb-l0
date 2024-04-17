@@ -15,10 +15,11 @@ import (
 
 type Cache interface {
 	GetOrder(id string) (*model.Order, bool)
-	GetAllOrderIDs() []string
+	GetAllOrderIDs(context.Context) []string
 	AddOrUpdateOrder(order *model.Order) error
 	GetData() ([]model.Order, error)
 	ProcessOrder(ctx context.Context, order *model.Order) error
+	InitCacheWithDBOrders(ctx context.Context) // Corrected method signature
 }
 
 type Service struct {
@@ -38,6 +39,7 @@ func NewCacheService(logger *logger.Logger, dbService *database.Service) Cache {
 		orderChan: make(chan *model.Order),
 	}
 }
+
 func (c *Service) InitCacheWithDBOrders(ctx context.Context) {
 	orders, err := c.dbService.ListOrders(ctx)
 	if err != nil {
@@ -50,6 +52,7 @@ func (c *Service) InitCacheWithDBOrders(ctx context.Context) {
 	for _, order := range orders {
 		c.orders[order.OrderUID] = &order // Предполагается, что order.OrderUID уникальный идентификатор заказа
 	}
+
 	c.logger.Info(fmt.Sprintf("Кэш инициализирован %d заказами", len(orders)))
 }
 
@@ -70,7 +73,7 @@ func (c *Service) GetOrder(id string) (*model.Order, bool) {
 	return order, exists
 }
 
-func (c *Service) GetAllOrderIDs() []string {
+func (c *Service) GetAllOrderIDs(context.Context) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
