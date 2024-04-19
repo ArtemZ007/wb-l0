@@ -63,7 +63,7 @@ BEGIN
             delivery_id BIGINT REFERENCES ecommerce.deliveries(id) ON DELETE SET NULL,
             payment_id BIGINT REFERENCES ecommerce.payments(id) ON DELETE SET NULL,
             locale TEXT NOT NULL,
-            internal_signature TEXT,
+            BIGINTernal_signature TEXT,
             customer_id UUID NOT NULL,
             delivery_service TEXT NOT NULL,
             shardkey TEXT NOT NULL,
