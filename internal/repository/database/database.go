@@ -19,7 +19,6 @@ import (
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
-	"github.com/sirupsen/logrus"
 )
 
 type Service struct {
@@ -84,62 +83,32 @@ func (s *Service) SaveOrder(ctx context.Context, order *model.Order) error {
 		s.logger.WithError(err).Error("Ошибка при начале транзакции")
 		return err
 	}
+
 	defer func() {
 		if p := recover(); p != nil {
-			err := tx.Rollback()
-			if err != nil {
-				return
-			}
+			_ = tx.Rollback()
 			s.logger.WithField("panic", p).Error("Паника при сохранении заказа, транзакция отменена")
 		}
 	}()
 
-	// Сохранение основной информации о заказе
-	orderQuery := `INSERT INTO ecommerce.orders (order_uid, track_number, entry, delivery_service, shardkey, sm_id, date_created, oof_shard, customer_id, locale) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING order_uid;`
-	var orderId uuid.UUID
-	err = tx.QueryRowContext(ctx, orderQuery, order.OrderUID, order.TrackNumber, order.Entry, order.DeliveryService, order.Shardkey, order.SMID, order.DateCreated, order.OofShard, order.CustomerID, *order.Locale).Scan(&orderId)
-	if err != nil {
-		err1 := tx.Rollback()
-		if err1 != nil {
-			return err1
-		}
-		s.logger.WithError(err).Error("Ошибка при сохранении заказа")
+	if err := s.saveOrderMainInfo(ctx, tx, order); err != nil {
+		_ = tx.Rollback()
 		return err
 	}
 
-	// Сохранение информации о доставке
-	deliveryQuery := `INSERT INTO ecommerce.deliveries (name, phone, zip, city, address, region, email) VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	if _, err = tx.ExecContext(ctx, deliveryQuery, *order.Delivery.Name, *order.Delivery.Phone, *order.Delivery.Zip, *order.Delivery.City, *order.Delivery.Address, *order.Delivery.Region, *order.Delivery.Email); err != nil {
-		err := tx.Rollback()
-		if err != nil {
-			return err
-		}
-		s.logger.WithError(err).Error("Ошибка при сохранении информации о доставке")
+	if err := s.saveDeliveryInfo(ctx, tx, order); err != nil {
+		_ = tx.Rollback()
 		return err
 	}
 
-	// Сохранение информации об оплате
-	paymentQuery := `INSERT INTO ecommerce.payments (id, transaction, request_id, currency, provider, amount, payment_dt, bank, delivery_cost, goods_total, custom_fee) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
-	if _, err = tx.ExecContext(ctx, paymentQuery, orderId, *order.Payment.Transaction, *order.Payment.RequestID, *order.Payment.Currency, *order.Payment.Provider, *order.Payment.Amount, *order.Payment.PaymentDt, *order.Payment.Bank, *order.Payment.DeliveryCost, *order.Payment.GoodsTotal, *order.Payment.CustomFee); err != nil {
-		err := tx.Rollback()
-		if err != nil {
-			return err
-		}
-		s.logger.WithError(err).Error("Ошибка при сохранении информации об оплате")
+	if err := s.savePaymentInfo(ctx, tx, order); err != nil {
+		_ = tx.Rollback()
 		return err
 	}
 
-	// Сохранение информации о товарах
-	itemQuery := `INSERT INTO ecommerce.items (id, chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
-	for _, item := range order.Items {
-		if _, err = tx.ExecContext(ctx, itemQuery, orderId, *item.ChrtID, *item.TrackNumber, *item.Price, *item.RID, *item.Name, *item.Sale, *item.Size, *item.TotalPrice, *item.NmID, *item.Brand, *item.Status); err != nil {
-			err := tx.Rollback()
-			if err != nil {
-				return err
-			}
-			s.logger.WithError(err).Error("Ошибка при сохранении информации о товарах")
-			return err
-		}
+	if err := s.saveItemsInfo(ctx, tx, order); err != nil {
+		_ = tx.Rollback()
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -147,7 +116,76 @@ func (s *Service) SaveOrder(ctx context.Context, order *model.Order) error {
 		return err
 	}
 
-	s.logger.Info("Заказ успешно сохранен", logrus.Fields{"order_uid": order.OrderUID})
+	return nil
+}
+
+func (s *Service) saveOrderMainInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
+	query := `INSERT INTO ecommerce.orders (order_uid, track_number, entry, delivery_service, shardkey, sm_id, date_created, oof_shard, customer_id, locale) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING order_uid;`
+	if err := tx.QueryRowContext(ctx, query, order.OrderUID, order.TrackNumber, order.Entry, order.DeliveryService, order.Shardkey, order.SMID, order.DateCreated, order.OofShard, order.CustomerID, order.Locale).Scan(&order.OrderUID); err != nil {
+		s.logger.WithError(err).Error("Ошибка при сохранении основной информации о заказе")
+		return err
+	}
+	return nil
+}
+
+func (s *Service) saveDeliveryInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
+	deliveryQuery := `INSERT INTO ecommerce.deliveries (order_uid, name, phone, zip, city, address, region, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	if _, err := tx.ExecContext(ctx, deliveryQuery, order.OrderUID, *order.Delivery.Name, *order.Delivery.Phone, *order.Delivery.Zip, *order.Delivery.City, *order.Delivery.Address, *order.Delivery.Region, *order.Delivery.Email); err != nil {
+		s.logger.WithError(err).Error("Ошибка при сохранении информации о доставке")
+		return err
+	}
+	return nil
+}
+
+func (s *Service) savePaymentInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
+	paymentQuery := `INSERT INTO ecommerce.payments (order_uid, transaction, request_id, currency, provider, amount, payment_dt, bank, delivery_cost, goods_total, custom_fee) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+
+	// Prepare the transaction field as sql.NullString
+	transaction := sql.NullString{Valid: false}
+	if order.Payment.Transaction != nil {
+		transaction = sql.NullString{String: *order.Payment.Transaction, Valid: true}
+	}
+
+	// Ensure other fields are handled similarly if they can be nil
+
+	// Use the correctly prepared transaction variable in the ExecContext call
+	if _, err := tx.ExecContext(ctx, paymentQuery, order.OrderUID, transaction, *order.Payment.RequestID, *order.Payment.Currency, *order.Payment.Provider, *order.Payment.Amount, *order.Payment.PaymentDt, *order.Payment.Bank, *order.Payment.DeliveryCost, *order.Payment.GoodsTotal, *order.Payment.CustomFee); err != nil {
+		s.logger.WithError(err).Error("Ошибка при сохранении информации об оплате")
+		return err
+	}
+	return nil
+}
+
+func (s *Service) saveItemsInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
+	itemQuery := `INSERT INTO ecommerce.items (id, chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);`
+	for _, item := range order.Items {
+		// First, check if item.Status is not nil to avoid runtime panic
+		if item.Status == nil {
+			s.logger.Error("Статус товара не может быть nil")
+			continue // Skip this item or handle as needed
+		}
+		// Validate the status value by dereferencing item.Status
+		if *item.Status < 1 || *item.Status > 5 {
+			s.logger.WithField("status", *item.Status).Error("Статус товара вне допустимого диапазона")
+			continue // Example: skipping this item
+		}
+
+		// Generate a new UUID for the item ID
+		itemID, err := uuid.NewUUID()
+		if err != nil {
+			s.logger.WithError(err).Error("Ошибка при генерации UUID для товара")
+			return err
+		}
+
+		if _, err := tx.ExecContext(ctx, itemQuery, itemID, *item.ChrtID, *item.TrackNumber, *item.Price, *item.RID, *item.Name, *item.Sale, *item.Size, *item.TotalPrice, *item.NmID, *item.Brand, *item.Status); err != nil {
+			txErr := tx.Rollback()
+			if txErr != nil {
+				s.logger.WithError(txErr).Error("Ошибка при откате транзакции")
+			}
+			s.logger.WithError(err).Error("Ошибка при сохранении информации о товарах")
+			return err
+		}
+	}
 	return nil
 }
 
@@ -240,8 +278,8 @@ func (s *Service) GetFullOrderDetails(ctx context.Context, orderUID string) (*mo
            p.transaction, p.request_id, p.currency, p.provider, p.amount, p.payment_dt, p.bank, p.delivery_cost, p.goods_total, p.custom_fee,
            i.chrt_id, i.track_number, i.price, i.rid, i.name, i.sale, i.size, i.total_price, i.nm_id, i.brand, i.status
     FROM ecommerce.orders o
-    LEFT JOIN ecommerce.deliveries d ON o.delivery_id = d.id
-    LEFT JOIN ecommerce.payments p ON o.payment_id = p.id
+    LEFT JOIN ecommerce.deliveries d ON o.delivery_id = d.phone
+    LEFT JOIN ecommerce.payments p ON o.payment_id = p.transaction
     LEFT JOIN ecommerce.items i ON o.order_uid = i.id
     WHERE o.order_uid = $1;
     `
@@ -255,11 +293,12 @@ func (s *Service) GetFullOrderDetails(ctx context.Context, orderUID string) (*mo
 		s.logger.WithError(err).Error("Ошибка при запросе полных данных заказа")
 		return nil, err
 	}
-	defer func(rows *sql.Rows) {
+	defer func() {
 		err := rows.Close()
 		if err != nil {
+			s.logger.WithError(err).Error("Ошибка при закрытии результата запроса")
 		}
-	}(rows)
+	}()
 
 	// Later in your code, when processing items:
 	itemsMap := make(map[string]*model.Item)
@@ -292,79 +331,3 @@ func (s *Service) GetFullOrderDetails(ctx context.Context, orderUID string) (*mo
 
 	return &order, nil
 }
-
-// func (s *Service) SaveOrder(ctx context.Context, order *model.Order) error {
-//     tx, err := s.db.BeginTx(ctx, nil)
-//     if err != nil {
-//         s.logger.WithError(err).Error("Ошибка при начале транзакции")
-//         return err
-//     }
-
-//     defer func() {
-//         if p := recover(); p != nil {
-//             _ = tx.Rollback()
-//             s.logger.WithField("panic", p).Error("Паника при сохранении заказа, транзакция отменена")
-//         }
-//     }()
-
-//     if err := s.saveOrderMainInfo(ctx, tx, order); err != nil {
-//         _ = tx.Rollback()
-//         return err
-//     }
-
-//     if err := s.saveDeliveryInfo(ctx, tx, order); err != nil {
-//         _ = tx.Rollback()
-//         return err
-//     }
-
-//     if err := s.savePaymentInfo(ctx, tx, order); err != nil {
-//         _ = tx.Rollback()
-//         return err
-//     }
-
-//     if err := s.saveItemsInfo(ctx, tx, order); err != nil {
-//         _ = tx.Rollback()
-//         return err
-//     }
-
-//     if err := tx.Commit(); err != nil {
-//         s.logger.WithError(err).Error("Ошибка при подтверждении транзакции")
-//         return err
-//     }
-
-//     return nil
-// }
-
-// func (s *Service) saveOrderMainInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-//     query := `INSERT INTO ecommerce.orders (order_uid, track_number, entry, delivery_service, shardkey, sm_id, date_created, oof_shard, customer_id, locale) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING order_uid;`
-//     if err := tx.QueryRowContext(ctx, query, order.OrderUID, order.TrackNumber, order.Entry, order.DeliveryService, order.Shardkey, order.SMID, order.DateCreated, order.OofShard, order.CustomerID, order.Locale).Scan(&order.OrderUID); err != nil {
-//         s.logger.WithError(err).Error("Ошибка при сохранении основной информации о заказе")
-//         return err
-//     }
-//     return nil
-// }
-
-// func (s *Service) saveDeliveryInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-//     if order.Delivery == nil {
-//         return nil // Если информация о доставке отсутствует, пропускаем этот шаг
-//     }
-//     query := `INSERT INTO ecommerce.deliveries (name, phone, zip, city, address, region, email) VALUES ($1, $2, $3, $4, $5, $6, $7)`
-//     _, err := tx.ExecContext(ctx, query, order.Delivery.Name, order.Delivery.Phone, order.Delivery.Zip, order.Delivery.City, order.Delivery.Address, order.Delivery.Region, order.Delivery.Email)
-//     if err != nil {
-//         s.logger.WithError(err).Error("Ошибка при сохранении информации о доставке")
-//         return err
-//     }
-//     return nil
-// }
-
-// func (s *Service) savePaymentInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-//     // Примерная реализация, предполагается, что у вас есть структура Payment в вашем заказе
-//     // Здесь должен быть код для сохранения информации о платеже
-//     return nil
-// }
-
-// func (s *Service) saveItemsInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-//     // Примерная реализация, предполагается, что у вас есть список Items в вашем заказе
-//     // Здесь должен быть код для сохранения информации об элементах заказа
-//     return nil
-// }

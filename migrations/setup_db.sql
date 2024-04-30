@@ -8,7 +8,7 @@ BEGIN
     -- Таблица deliveries
     IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_tables WHERE schemaname = 'ecommerce' AND tablename = 'deliveries') THEN
         CREATE TABLE ecommerce.deliveries (
-            id SERIAL PRIMARY KEY,
+            order_uid UUID PRIMARY KEY,
             name TEXT NOT NULL,
             phone TEXT NOT NULL CHECK (phone ~ '^\+\d{1,15}$'),
             zip TEXT NOT NULL,
@@ -22,7 +22,7 @@ BEGIN
     -- Таблица payments
     IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_tables WHERE schemaname = 'ecommerce' AND tablename = 'payments') THEN
         CREATE TABLE ecommerce.payments (
-            id SERIAL PRIMARY KEY,
+            order_uid UUID PRIMARY KEY,
             transaction TEXT NOT NULL UNIQUE,
             request_id TEXT NOT NULL,
             currency TEXT NOT NULL CHECK (currency IN ('USD', 'EUR', 'RUB')),
@@ -37,22 +37,23 @@ BEGIN
     END IF;
 
     -- Таблица items
-    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_tables WHERE schemaname = 'ecommerce' AND tablename = 'items') THEN
-        CREATE TABLE ecommerce.items (
-            id SERIAL PRIMARY KEY,
-            chrt_id BIGINT NOT NULL,
-            track_number TEXT NOT NULL UNIQUE,
-            price BIGINT NOT NULL CHECK (price > 0),
-            rid TEXT NOT NULL,
-            name TEXT NOT NULL,
-            sale BIGINT NOT NULL CHECK (sale >= 0),
-            size TEXT NOT NULL,
-            total_price BIGINT NOT NULL CHECK (total_price > 0),
-            nm_id BIGINT NOT NULL,
-            brand TEXT NOT NULL,
-            status BIGINT NOT NULL CHECK (status BETWEEN 1 AND 5)
-        );
-    END IF;
+-- Таблица items
+IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_tables WHERE schemaname = 'ecommerce' AND tablename = 'items') THEN
+    CREATE TABLE ecommerce.items (
+        id UUID PRIMARY KEY,
+        chrt_id BIGINT NOT NULL,
+        track_number TEXT NOT NULL UNIQUE,
+        price BIGINT NOT NULL CHECK (price > 0),
+        rid TEXT NOT NULL,
+        name TEXT NOT NULL,
+        sale BIGINT NOT NULL CHECK (sale >= 0),
+        size TEXT NOT NULL,
+        total_price BIGINT NOT NULL CHECK (total_price > 0),
+        nm_id BIGINT NOT NULL,
+        brand TEXT NOT NULL,
+        status BIGINT NOT NULL CHECK (status BETWEEN 1 AND 5)
+    );
+END IF;
 
     -- Таблица orders
     IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_tables WHERE schemaname = 'ecommerce' AND tablename = 'orders') THEN
@@ -60,10 +61,10 @@ BEGIN
             order_uid UUID PRIMARY KEY,
             track_number UUID NOT NULL UNIQUE,
             entry TEXT,
-            delivery_id BIGINT REFERENCES ecommerce.deliveries(id) ON DELETE SET NULL,
-            payment_id BIGINT REFERENCES ecommerce.payments(id) ON DELETE SET NULL,
+            delivery_id UUID REFERENCES ecommerce.deliveries(order_uid) ON DELETE SET NULL,
+            payment_id UUID REFERENCES ecommerce.payments(order_uid) ON DELETE SET NULL,
             locale TEXT NOT NULL,
-            BIGINTernal_signature TEXT,
+            internal_signature TEXT,
             customer_id UUID NOT NULL,
             delivery_service TEXT NOT NULL,
             shardkey TEXT NOT NULL,
@@ -77,9 +78,10 @@ BEGIN
 
     -- Таблица order_items
     IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_tables WHERE schemaname = 'ecommerce' AND tablename = 'order_items') THEN
+        ALTER TABLE ecommerce.items ALTER COLUMN id SET DATA TYPE UUID;
         CREATE TABLE ecommerce.order_items (
             order_uid UUID REFERENCES ecommerce.orders(order_uid) ON DELETE CASCADE,
-            item_id BIGINT REFERENCES ecommerce.items(id) ON DELETE CASCADE,
+            item_id UUID REFERENCES ecommerce.items(id) ON DELETE CASCADE,
             PRIMARY KEY (order_uid, item_id)
         );
     END IF;

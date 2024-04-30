@@ -3,12 +3,13 @@ package subscription
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
 	"github.com/ArtemZ007/wb-l0/internal/interfaces"
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	"github.com/nats-io/stan.go"
-	"time"
 )
 
 // OrderListener реализует слушатель сообщений NATS Streaming для заказов.
