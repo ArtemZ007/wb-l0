@@ -26,8 +26,15 @@ type Service struct {
 // NewService создает новый экземпляр Service с подключением к базе данных и логгером.
 // В database.go
 func NewService(db *sql.DB, logger logger.ILogger) (*Service, error) {
+	if db == nil {
+		return nil, errors.New("db не может быть nil")
+	}
+	if logger == nil {
+		return nil, errors.New("logger не может быть nil")
+	}
+
 	var s = &Service{
-		db:     db, // Now correctly accepting a pointer to sql.DB
+		db:     db,
 		logger: logger,
 	}
 

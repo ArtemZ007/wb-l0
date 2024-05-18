@@ -67,11 +67,17 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 		appLogger.Fatal("Ошибка при создании сервиса базы данных: ", err)
 	}
 
+	// Log dbService to ensure it's not nil
+	appLogger.Info("dbService инициализирован: ", dbService)
+
 	// Create the cache service
 	cacheService := cache.NewCacheService(appLogger)
 	if cacheService == nil {
 		appLogger.Fatal("Не удалось создать сервис кэша")
 	}
+
+	// Log cacheService to ensure it's not nil
+	appLogger.Info("cacheService инициализирован: ", cacheService)
 
 	// Set the database service for the cache service
 	cacheService.SetDatabaseService(dbService)
