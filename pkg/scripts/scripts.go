@@ -25,7 +25,7 @@ func generateRandomOrder() model.Order {
 	sale := rand.Intn(100)
 	totalPrice := rand.Intn(10000) + 100
 	nmID := rand.Intn(100000)
-	status := rand.Intn(100) // Corrected to match the expected type
+	status := rand.Intn(5) + 1 // Corrected to match the expected type
 
 	entry := "entry_" + uuid.New().String()
 	name := "Name_" + uuid.New().String()

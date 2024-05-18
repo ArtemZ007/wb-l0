@@ -26,19 +26,13 @@ func main() {
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		_, err := fmt.Fprintf(os.Stderr, "Ошибка при загрузке конфигурации: %v\n", err)
-		if err != nil {
-			return
-		}
+		fmt.Fprintf(os.Stderr, "Ошибка при загрузке конфигурации: %v\n", err)
 		os.Exit(1)
 	}
 
 	appLogger := logger.New(cfg.GetLogLevel())
 	if appLogger == nil {
-		_, err := fmt.Fprintf(os.Stderr, "Не удалось инициализировать логгер\n")
-		if err != nil {
-			return
-		}
+		fmt.Fprintf(os.Stderr, "Не удалось инициализировать логгер\n")
 		os.Exit(1)
 	}
 
@@ -52,20 +46,18 @@ func main() {
 
 func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 	// Initialize a connection to the database
-	db, err := sql.Open("postgres", "host=localhost port=5432 user=user password=password dbname=db sslmode=disable")
+	db, err := sql.Open("postgres", cfg.GetDBConnectionString())
 	if err != nil {
 		appLogger.Fatal("Ошибка при подключении к базе данных: ", err)
 	}
-	defer func(db *sql.DB) {
-		err := db.Close()
-		if err != nil {
+	defer func() {
+		if err := db.Close(); err != nil {
 			appLogger.Error("Ошибка при закрытии соединения с базой данных: ", err)
 		}
-	}(db)
+	}()
 
 	// Check the database connection
-	err = db.Ping()
-	if err != nil {
+	if err := db.Ping(); err != nil {
 		appLogger.Fatal("Не удалось подключиться к базе данных: ", err)
 	}
 
@@ -86,15 +78,7 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 
 	// Now safe to call InitCacheWithDBOrders
 	ctx := context.Background()
-	err = cacheService.InitCacheWithDBOrders(ctx)
-	if err != nil {
-		appLogger.Fatal("Ошибка при инициализации кэша заказами из базы данных: ", err)
-	}
-
-	errorContext()
-	ctx = context.Background()
-	err = cacheService.InitCacheWithDBOrders(ctx)
-	if err != nil {
+	if err := cacheService.InitCacheWithDBOrders(ctx); err != nil {
 		appLogger.Fatal("Ошибка при инициализации кэша заказами из базы данных: ", err)
 	}
 
@@ -130,17 +114,14 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 	}
 }
 
-func errorContext() {
-
-	return
-}
-
 func waitForShutdownSignal(appLogger *logger.Logger) <-chan os.Signal {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
 	go func() {
 		sig := <-signals
 		appLogger.Info("Получен сигнал для завершения работы: ", sig)
 	}()
+
 	return signals
 }

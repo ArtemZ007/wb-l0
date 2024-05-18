@@ -1,6 +1,3 @@
-// Package cache предоставляет функциональность кэширования для хранения и извлечения заказов.
-// Это включает в себя операции, такие как загрузка заказов из базы данных в кэш,
-// получение конкретных заказов и управление данными кэша.
 package cache
 
 import (
@@ -61,7 +58,7 @@ func (c *Service) InitCacheWithDBOrders(ctx context.Context) error {
 		orderCopy := order // Создаем копию для безопасного сохранения в кэше
 		c.orders[order.OrderUID] = &orderCopy
 	}
-	c.logger.Info("Кэш инициализирован заказами ", map[string]interface{}{"count": len(orders)})
+	c.logger.Info("Кэш инициализирован заказами ", map[string]interface{}{"Значение": len(orders)})
 
 	return nil // Correctly return nil here to indicate success
 }

@@ -1,7 +1,3 @@
-// Package database Пакет предоставляет операции с базой данных, необходимые для управления заказами в системе.
-// Это включает создание, обновление и получение заказов из базы данных.
-//
-// Автор: ArtemZ007
 package database
 
 import (
@@ -26,9 +22,6 @@ type Service struct {
 	logger logger.ILogger
 	cache  cache.Cache
 }
-
-// В начале файла, где определены импорты
-var _ uuid.UUID
 
 // NewService создает новый экземпляр Service с подключением к базе данных и логгером.
 // В database.go
@@ -129,8 +122,15 @@ func (s *Service) saveOrderMainInfo(ctx context.Context, tx *sql.Tx, order *mode
 }
 
 func (s *Service) saveDeliveryInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-	deliveryQuery := `INSERT INTO ecommerce.deliveries (order_uid, name, phone, zip, city, address, region, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
-	if _, err := tx.ExecContext(ctx, deliveryQuery, order.OrderUID, *order.Delivery.Name, *order.Delivery.Phone, *order.Delivery.Zip, *order.Delivery.City, *order.Delivery.Address, *order.Delivery.Region, *order.Delivery.Email); err != nil {
+	// Проверка на nil и корректность значений
+	if order.OrderUID == "" || order.Delivery == nil || order.Delivery.Name == nil || order.Delivery.Phone == nil || order.Delivery.Zip == nil || order.Delivery.City == nil || order.Delivery.Address == nil || order.Delivery.Region == nil || order.Delivery.Email == nil {
+		s.logger.Error("Некорректные данные для сохранения информации о доставке")
+		return fmt.Errorf("некорректные данные для сохранения информации о доставке")
+	}
+
+	deliveryQuery := `INSERT INTO ecommerce.deliveries (id, name, phone, zip, city, address, region, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	_, err := tx.ExecContext(ctx, deliveryQuery, order.OrderUID, order.Delivery.Name, order.Delivery.Phone, order.Delivery.Zip, order.Delivery.City, order.Delivery.Address, order.Delivery.Region, order.Delivery.Email)
+	if err != nil {
 		s.logger.WithError(err).Error("Ошибка при сохранении информации о доставке")
 		return err
 	}
@@ -138,7 +138,7 @@ func (s *Service) saveDeliveryInfo(ctx context.Context, tx *sql.Tx, order *model
 }
 
 func (s *Service) savePaymentInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-	paymentQuery := `INSERT INTO ecommerce.payments (order_uid, transaction, request_id, currency, provider, amount, payment_dt, bank, delivery_cost, goods_total, custom_fee) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+	paymentQuery := `INSERT INTO ecommerce.payments (id, transaction, request_id, currency, provider, amount, payment_dt, bank, delivery_cost, goods_total, custom_fee) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 	// Prepare the transaction field as sql.NullString
 	transaction := sql.NullString{Valid: false}
@@ -208,7 +208,7 @@ func (s *Service) UpdateOrder(ctx context.Context, order *model.Order) error {
 
 func (s *Service) ListOrders(ctx context.Context) ([]model.Order, error) {
 	var orders []model.Order
-	query := `SELECT order_uid, track_number, entry, locale, customer_id, delivery_service, shardkey, sm_id, date_created, oof_shard FROM ecommerce.orders;`
+	query := `SELECT order_uid, track_number, entry, delivery_id, payment_id, locale, internal_signature, customer_id, delivery_service, shardkey, sm_id, date_created, oof_shard FROM ecommerce.orders;`
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		s.logger.WithError(err).Error("Ошибка при получении списка заказов из базы данных")
@@ -223,7 +223,7 @@ func (s *Service) ListOrders(ctx context.Context) ([]model.Order, error) {
 
 	for rows.Next() {
 		var order model.Order
-		if err := rows.Scan(&order.OrderUID, &order.TrackNumber, &order.Entry, &order.Locale, &order.InternalSignature, &order.CustomerID, &order.DeliveryService, &order.Shardkey, &order.SMID, &order.DateCreated, &order.OofShard); err != nil {
+		if err := rows.Scan(&order.OrderUID, &order.TrackNumber, &order.Entry, &order.Delivery.ID, &order.Payment.ID, &order.Locale, &order.InternalSignature, &order.CustomerID, &order.DeliveryService, &order.Shardkey, &order.SMID, &order.DateCreated, &order.OofShard); err != nil {
 			s.logger.WithError(err).Error("Ошибка при чтении данных заказа")
 			continue
 		}
