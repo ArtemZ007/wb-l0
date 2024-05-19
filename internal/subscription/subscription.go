@@ -22,8 +22,7 @@ type OrderListener struct {
 }
 
 // NewOrderListener создает новый экземпляр OrderListener.
-// NewOrderListener создает новый экземпляр OrderListener.
-func NewOrderListener(natsURL, clusterID, clientID string, cacheService cache.Cache, orderService interfaces.IOrderService, logger logger.ILogger) (*OrderListener, error) {
+func NewOrderListener(natsURL, clusterID, clientID string, cacheService cache.Cache, orderService interfaces.IOrderService, logger *logger.Logger) (*OrderListener, error) {
 	// Логирование процесса подключения к NATS Streaming
 	logger.Info("Подключение к NATS Streaming ", natsURL, " ", clusterID, " ", clientID, " ")
 	sc, err := stan.Connect(clusterID, clientID, stan.NatsURL(natsURL))
@@ -34,7 +33,7 @@ func NewOrderListener(natsURL, clusterID, clientID string, cacheService cache.Ca
 	return &OrderListener{
 		sc:           sc,
 		cacheService: cacheService,
-		orderService: orderService, // Correctly assign the passed orderService
+		orderService: orderService, // Сохраняем переданный orderService
 		logger:       logger,
 	}, nil
 }

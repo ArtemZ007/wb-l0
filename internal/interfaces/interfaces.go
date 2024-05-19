@@ -17,7 +17,7 @@ type IService interface {
 
 // ICacheService определяет интерфейс для работы с кэшем.
 type ICacheService interface {
-	InitCacheWithDBOrders(ctx context.Context, db *sql.DB) error
+	LoadOrdersFromDB(ctx context.Context, db *sql.DB) error
 	CacheOrder(id string) (*model.Order, bool)
 	GetAllOrderIDs() []string
 	AddOrUpdateOrder(order *model.Order) error
@@ -44,6 +44,9 @@ type IOrderService interface {
 
 	// UpdateOrder обновляет информацию о заказе.
 	UpdateOrder(ctx context.Context, order *model.Order) error
+
+	// DeleteOrder удаляет заказ по его уникальному идентификатору.
+	DeleteOrder(ctx context.Context, orderUID string) error
 
 	// ListOrders возвращает список всех заказов.
 	ListOrders(ctx context.Context) ([]model.Order, error)

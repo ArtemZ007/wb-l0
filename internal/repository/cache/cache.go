@@ -11,19 +11,16 @@ import (
 
 type Cache interface {
 	GetOrder(id string) (*model.Order, bool)
-	GetAllOrderIDs(context.Context) []string
+	GetAllOrderIDs() []string
 	AddOrUpdateOrder(order *model.Order) error
 	GetData() ([]model.Order, error)
 	ProcessOrder(ctx context.Context, order *model.Order) error
-
 	UpdateOrderInCache(ctx context.Context, order *model.Order) error
 	GetOrderFromCache(ctx context.Context, orderUID string) (*model.Order, error)
 }
 
 type IOrderService interface {
 	ListOrders(ctx context.Context) ([]model.Order, error)
-
-	InitCacheWithDBOrders(ctx context.Context) // Corrected method signature
 }
 
 type Service struct {
@@ -61,7 +58,6 @@ func (c *Service) InitCacheWithDBOrders(ctx context.Context) error {
 		orderCopy := order // Создаем копию для безопасного сохранения в кэше
 		c.orders[order.OrderUID] = &orderCopy
 	}
-
 	c.logger.Info("Кэш инициализирован заказами ", map[string]interface{}{"Значение": len(orders)})
 
 	return nil // Correctly return nil here to indicate success
@@ -84,7 +80,7 @@ func (c *Service) GetOrder(id string) (*model.Order, bool) {
 	return order, exists
 }
 
-func (c *Service) GetAllOrderIDs(context.Context) []string {
+func (c *Service) GetAllOrderIDs() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 

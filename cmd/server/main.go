@@ -1,5 +1,3 @@
-// Пакет main является точкой входа приложения. Он инициализирует и запускает все необходимые сервисы.
-// Автор: ArtemZ007
 package main
 
 import (
@@ -65,10 +63,6 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 
 	// Create the database service with the established connection
 	dbService, err := database.NewService(db, appLogger)
-
-	//Сервис работы с базой данных
-	service, err := database.NewService(db, appLogger)
-
 	if err != nil {
 		appLogger.Fatal("Ошибка при создании сервиса базы данных: ", err)
 	}
@@ -96,17 +90,6 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 
 	// Continue with application setup...
 	handler := httpQS.NewHandler(cacheService, appLogger)
-
-	// Создание экземпляра cache.Service
-	// Создание экземпляра cache.Service
-	cacheService := cache.NewCacheService(appLogger, service) // Renamed variable for clarity and convention
-
-	// Correctly calling InitCacheWithDBOrders without attempting to capture a return value
-	cacheService.InitCacheWithDBOrders(ctx)
-	appLogger.Info("Инициализация кэша заказами из базы данных выполнена")
-
-	handler := httpQS.NewHandler(cacheService, appLogger) // Now correctly references cacheService
-
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
 		Handler: handler,

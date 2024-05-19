@@ -20,12 +20,13 @@ func generateRandomOrder() model.Order {
 	deliveryCost := rand.Intn(1000) + 100
 	goodsTotal := rand.Intn(10000) + 500
 	customFee := rand.Intn(1000)
-	chrtID := rand.Intn(20)
+	chrtID := rand.Intn(100000)
 	price := rand.Intn(10000) + 100
 	sale := rand.Intn(100)
 	totalPrice := rand.Intn(10000) + 100
 	nmID := rand.Intn(100000)
 	status := rand.Intn(5) + 1 // Corrected to match the expected type
+
 	entry := "entry_" + uuid.New().String()
 	name := "Name_" + uuid.New().String()
 	phone := fmt.Sprintf("+7%010d", rand.Intn(10000000000)) // Генерация номера телефона в формате +7XXXXXXXXXX
