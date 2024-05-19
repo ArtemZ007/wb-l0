@@ -11,16 +11,19 @@ import (
 
 type Cache interface {
 	GetOrder(id string) (*model.Order, bool)
-	GetAllOrderIDs() []string
+	GetAllOrderIDs(context.Context) []string
 	AddOrUpdateOrder(order *model.Order) error
 	GetData() ([]model.Order, error)
 	ProcessOrder(ctx context.Context, order *model.Order) error
+
 	UpdateOrderInCache(ctx context.Context, order *model.Order) error
 	GetOrderFromCache(ctx context.Context, orderUID string) (*model.Order, error)
 }
 
 type IOrderService interface {
 	ListOrders(ctx context.Context) ([]model.Order, error)
+
+	InitCacheWithDBOrders(ctx context.Context) // Corrected method signature
 }
 
 type Service struct {
@@ -41,11 +44,15 @@ func NewCacheService(logger *logger.Logger) *Service {
 	}
 }
 
+
 // SetDatabaseService Adjust the SetDatabaseService method to accept an interface rather than a concrete type.// SetDatabaseService sets the database service that implements the IOrderService interface.
 func (c *Service) SetDatabaseService(dbService IOrderService) {
 	c.dbService = dbService
 }
 func (c *Service) InitCacheWithDBOrders(ctx context.Context) error {
+
+func (c *Service) InitCacheWithDBOrders(ctx context.Context) {
+
 	orders, err := c.dbService.ListOrders(ctx)
 	if err != nil {
 		c.logger.Error("Ошибка при получении заказов из базы данных", map[string]interface{}{"error": err})
@@ -58,9 +65,14 @@ func (c *Service) InitCacheWithDBOrders(ctx context.Context) error {
 		orderCopy := order // Создаем копию для безопасного сохранения в кэше
 		c.orders[order.OrderUID] = &orderCopy
 	}
+
 	c.logger.Info("Кэш инициализирован заказами ", map[string]interface{}{"Значение": len(orders)})
 
 	return nil // Correctly return nil here to indicate success
+
+
+	c.logger.Info(fmt.Sprintf("Кэш инициализирован %d заказами", len(orders)))
+
 }
 
 func (c *Service) ProcessOrder(ctx context.Context, order *model.Order) error {
@@ -80,7 +92,7 @@ func (c *Service) GetOrder(id string) (*model.Order, bool) {
 	return order, exists
 }
 
-func (c *Service) GetAllOrderIDs() []string {
+func (c *Service) GetAllOrderIDs(context.Context) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
