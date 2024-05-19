@@ -44,6 +44,7 @@ func NewOrderListener(natsURL, clusterID, clientID string, cacheService cache.Ca
 // Измененный метод Start для включения логики сохранения в базу данных
 // Start начинает прослушивание сообщений на заданную тему.
 func (ol *OrderListener) Start(ctx context.Context) error {
+	// Your existing code...
 	natsSubject := "orders"
 	var err error
 	ol.subscription, err = ol.sc.Subscribe(natsSubject, func(msg *stan.Msg) {

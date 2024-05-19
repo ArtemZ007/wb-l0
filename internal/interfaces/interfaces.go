@@ -47,6 +47,7 @@ type IOrderService interface {
 
 	// ListOrders возвращает список всех заказов.
 	ListOrders(ctx context.Context) ([]model.Order, error)
+	// Define other methods as needed
 
 	// Start запускает основную логику сервиса в фоновом режиме.
 	Start(ctx context.Context) error

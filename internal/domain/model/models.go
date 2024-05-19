@@ -2,6 +2,7 @@ package model
 
 // Delivery описывает информацию о доставке.
 type Delivery struct {
+	ID      *int    `json:"-" validate:"required"`                     // Идентификатор
 	Name    *string `json:"name,omitempty" validate:"required"`        // Имя получателя
 	Phone   *string `json:"phone,omitempty" validate:"required,e164"`  // Телефонный номер получателя
 	Zip     *string `json:"zip,omitempty" validate:"required"`         // Почтовый индекс
@@ -13,6 +14,7 @@ type Delivery struct {
 
 // Payment описывает информацию об оплате.
 type Payment struct {
+	ID           *int    `json:"-" validate:"required"`                         // Идентификатор
 	Transaction  *string `json:"transaction,omitempty" validate:"required"`     // Идентификатор транзакции
 	RequestID    *string `json:"request_id,omitempty" validate:"required"`      // Идентификатор запроса
 	Currency     *string `json:"currency,omitempty" validate:"required"`        // Валюта
@@ -27,6 +29,7 @@ type Payment struct {
 
 // Item описывает информацию о товаре в заказе.
 type Item struct {
+	ID          *int    `json:"-" validate:"required"`                          // Идентификатор
 	ChrtID      *int    `json:"chrt_id,omitempty" validate:"required"`          // Идентификатор товара
 	TrackNumber *string `json:"track_number,omitempty" validate:"required"`     // Номер отслеживания
 	Price       *int    `json:"price,omitempty" validate:"required,gt=0"`       // Цена

@@ -1,6 +1,3 @@
-// Package cache предоставляет функциональность кэширования для хранения и извлечения заказов.
-// Это включает в себя операции, такие как загрузка заказов из базы данных в кэш,
-// получение конкретных заказов и управление данными кэша.
 package cache
 
 import (
@@ -9,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
-	"github.com/ArtemZ007/wb-l0/internal/repository/database"
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 )
 
@@ -19,6 +15,14 @@ type Cache interface {
 	AddOrUpdateOrder(order *model.Order) error
 	GetData() ([]model.Order, error)
 	ProcessOrder(ctx context.Context, order *model.Order) error
+
+	UpdateOrderInCache(ctx context.Context, order *model.Order) error
+	GetOrderFromCache(ctx context.Context, orderUID string) (*model.Order, error)
+}
+
+type IOrderService interface {
+	ListOrders(ctx context.Context) ([]model.Order, error)
+
 	InitCacheWithDBOrders(ctx context.Context) // Corrected method signature
 }
 
@@ -26,34 +30,49 @@ type Service struct {
 	mu        sync.RWMutex
 	orders    map[string]*model.Order
 	logger    *logger.Logger
-	dbService *database.Service
+	dbService IOrderService // Используйте интерфейс вместо конкретного типа
 	orderChan chan *model.Order
 }
 
-// NewCacheService creates and returns a new Cache instance.
-func NewCacheService(logger *logger.Logger, dbService *database.Service) Cache {
+// NewCacheService creates and returns a new Cache instance without a direct dependency on a database service.
+// The database service can be set later using SetDatabaseService method.
+func NewCacheService(logger *logger.Logger) *Service {
 	return &Service{
-		orders:    make(map[string]*model.Order),
 		logger:    logger,
-		dbService: dbService,
+		orders:    make(map[string]*model.Order),
 		orderChan: make(chan *model.Order),
 	}
 }
 
+
+// SetDatabaseService Adjust the SetDatabaseService method to accept an interface rather than a concrete type.// SetDatabaseService sets the database service that implements the IOrderService interface.
+func (c *Service) SetDatabaseService(dbService IOrderService) {
+	c.dbService = dbService
+}
+func (c *Service) InitCacheWithDBOrders(ctx context.Context) error {
+
 func (c *Service) InitCacheWithDBOrders(ctx context.Context) {
+
 	orders, err := c.dbService.ListOrders(ctx)
 	if err != nil {
 		c.logger.Error("Ошибка при получении заказов из базы данных", map[string]interface{}{"error": err})
-		return
+		return err // Return the error if there is one
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, order := range orders {
-		c.orders[order.OrderUID] = &order // Предполагается, что order.OrderUID уникальный идентификатор заказа
+		orderCopy := order // Создаем копию для безопасного сохранения в кэше
+		c.orders[order.OrderUID] = &orderCopy
 	}
 
+	c.logger.Info("Кэш инициализирован заказами ", map[string]interface{}{"Значение": len(orders)})
+
+	return nil // Correctly return nil here to indicate success
+
+
 	c.logger.Info(fmt.Sprintf("Кэш инициализирован %d заказами", len(orders)))
+
 }
 
 func (c *Service) ProcessOrder(ctx context.Context, order *model.Order) error {
@@ -101,4 +120,29 @@ func (c *Service) GetData() ([]model.Order, error) {
 		orders = append(orders, *order)
 	}
 	return orders, nil
+}
+func (c *Service) UpdateOrderInCache(_ context.Context, order *model.Order) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if _, exists := c.orders[order.OrderUID]; exists {
+		c.logger.Info("Заказ уже существует в кэше и будет обновлен", map[string]interface{}{"orderUID": order.OrderUID})
+	} else {
+		c.logger.Info("Заказ добавлен в кэш", map[string]interface{}{"orderUID": order.OrderUID})
+	}
+
+	c.orders[order.OrderUID] = order
+	return nil
+}
+
+func (c *Service) GetOrderFromCache(_ context.Context, orderUID string) (*model.Order, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Пытаемся найти заказ в кэше по его UID
+	if order, exists := c.orders[orderUID]; exists {
+		return order, nil
+	}
+	// Если заказ не найден в кэше, возвращаем ошибку
+	return nil, fmt.Errorf("заказ с UID %s не найден в кэше", orderUID)
 }
