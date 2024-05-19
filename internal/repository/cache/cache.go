@@ -44,15 +44,11 @@ func NewCacheService(logger *logger.Logger) *Service {
 	}
 }
 
-
 // SetDatabaseService Adjust the SetDatabaseService method to accept an interface rather than a concrete type.// SetDatabaseService sets the database service that implements the IOrderService interface.
 func (c *Service) SetDatabaseService(dbService IOrderService) {
 	c.dbService = dbService
 }
 func (c *Service) InitCacheWithDBOrders(ctx context.Context) error {
-
-func (c *Service) InitCacheWithDBOrders(ctx context.Context) {
-
 	orders, err := c.dbService.ListOrders(ctx)
 	if err != nil {
 		c.logger.Error("Ошибка при получении заказов из базы данных", map[string]interface{}{"error": err})
@@ -69,10 +65,6 @@ func (c *Service) InitCacheWithDBOrders(ctx context.Context) {
 	c.logger.Info("Кэш инициализирован заказами ", map[string]interface{}{"Значение": len(orders)})
 
 	return nil // Correctly return nil here to indicate success
-
-
-	c.logger.Info(fmt.Sprintf("Кэш инициализирован %d заказами", len(orders)))
-
 }
 
 func (c *Service) ProcessOrder(ctx context.Context, order *model.Order) error {

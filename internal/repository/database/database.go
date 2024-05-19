@@ -1,76 +1,57 @@
 package database
 
 import (
-	"context"
-	"database/sql"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
+    "context"
+    "database/sql"
+    "encoding/json"
+    "errors"
+    "fmt"
+    "os"
+    "path/filepath"
+    "time"
 
-
-	"time"
-
-	"github.com/ArtemZ007/wb-l0/pkg/logger"
-	"github.com/google/uuid"
-
-
-	"github.com/ArtemZ007/wb-l0/internal/domain/model"
-	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
-	"github.com/ArtemZ007/wb-l0/pkg/logger"
-	"github.com/google/uuid"
-	_ "github.com/lib/pq"
+    "github.com/ArtemZ007/wb-l0/pkg/logger"
+    "github.com/google/uuid"
+    _ "github.com/lib/pq"
+    "github.com/ArtemZ007/wb-l0/internal/domain/model"
+    "github.com/ArtemZ007/wb-l0/internal/repository/cache"
 )
 
 type Service struct {
-	db     *sql.DB
-	logger logger.ILogger
-	cache  cache.Cache
+    db     *sql.DB
+    logger logger.ILogger
+    cache  cache.Cache
 }
 
-
-// NewService создает новый экземпляр Service с подключением к базе данных и логгером.
-// В database.go
-func NewService(db *sql.DB, logger logger.ILogger) (*Service, error) {
-	if db == nil {
-		return nil, errors.New("db не может быть nil")
-	}
-	if logger == nil {
-		return nil, errors.New("logger не может быть nil")
-	}
-
-
-// Убедимся, что Service реализует интерфейс OrderService.
-var _ interfaces.IOrderService = &Service{}
-
-// В начале файла, где определены импорты
-var _ uuid.UUID
-
 // NewService создает новый экземпляр Service с подключением к базе данных и логгером.
 func NewService(db *sql.DB, logger logger.ILogger) (*Service, error) {
+    if db == nil {
+        return nil, errors.New("db не может быть nil")
+    }
+    if logger == nil {
+        return nil, errors.New("logger не может быть nil")
+    }
 
-	var s = &Service{
-		db:     db,
-		logger: logger,
-	}
+    var s = &Service{
+        db:     db,
+        logger: logger,
+    }
 
-	// Получение текущего рабочего каталога
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("не удалось получить текущий рабочий каталог: %w", err)
-	}
+    // Получение текущего рабочего каталога
+    cwd, err := os.Getwd()
+    if err != nil {
+        return nil, fmt.Errorf("не удалось получить текущий рабочий каталог: %w", err)
+    }
 
-	// Построение абсолютного пути к файлу миграции
-	migrationFilePath := filepath.Join(cwd, "../../migrations/setup_db.sql")
+    // Построение абсолютного пути к файлу миграции
+    migrationFilePath := filepath.Join(cwd, "../../migrations/setup_db.sql")
 
-	// Выполнение миграции
-	if err := s.executeMigration(migrationFilePath); err != nil {
-		return nil, fmt.Errorf("ошибка при выполнении миграции: %w", err)
-	}
+    // Выполнение миграции
+    if err := s.executeMigration(migrationFilePath); err != nil {
+        return nil, fmt.Errorf("ошибка при выполнении миграции: %w", err)
+    }
 
-	return s, nil
+    return s, nil
 }
 
 func (s *Service) Set(cacheService cache.Cache) {

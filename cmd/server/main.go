@@ -10,12 +10,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	1
 	"os/signal"
 	"syscall"
 
 	httpQS "github.com/ArtemZ007/wb-l0/internal/delivery/http"
-	"github.com/ArtemZ007/wb-l0/internal/repository/database"
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"github.com/ArtemZ007/wb-l0/internal/repository/database"
 	"github.com/ArtemZ007/wb-l0/internal/subscription"
@@ -74,7 +72,6 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 	if err != nil {
 		appLogger.Fatal("Ошибка при создании сервиса базы данных: ", err)
 	}
-
 
 	// Log dbService to ensure it's not nil
 	appLogger.Info("dbService инициализирован: ", dbService)
