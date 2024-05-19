@@ -1,6 +1,6 @@
 module github.com/ArtemZ007/wb-l0
 
-go 1.22.1
+go 1.22.3
 
 require (
 	github.com/go-playground/validator/v10 v10.19.0

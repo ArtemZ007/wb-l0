@@ -35,7 +35,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Не удалось инициализировать логгер\n")
 		os.Exit(1)
 	}
-
+	// Initialize the database service
 	if *flagCmd == "start" {
 		appLogger.Info("Запуск приложения")
 		startApp(cfg, appLogger)
@@ -89,12 +89,13 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 	}
 
 	// Continue with application setup...
-	handler := httpQS.NewHandler(cacheService, appLogger)
+	handler := httpQS.NewHandler(cacheService, appLogger) // http.Handler is an http.Handler interface
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
 		Handler: handler,
 	}
 
+	// Start the HTTP server
 	go func() {
 		appLogger.Info("HTTP сервер запущен на порту ", cfg.GetServerPort())
 		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
