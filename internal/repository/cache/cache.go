@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 )
 
+// Cache interface defines the methods for cache operations.
 type Cache interface {
 	GetOrder(id string) (*model.Order, bool)
 	GetAllOrderIDs() []string
@@ -22,21 +22,22 @@ type Cache interface {
 	GetOrderFromCache(ctx context.Context, orderUID string) (*model.Order, error)
 }
 
+// IOrderService interface defines the methods for order operations.
 type IOrderService interface {
 	ListOrders(ctx context.Context) ([]model.Order, error)
 }
 
+// Service represents the cache service.
 type Service struct {
 	cache     map[string]*model.Order
 	mu        sync.RWMutex
 	orders    map[string]*model.Order
 	logger    *logger.Logger
-	dbService IOrderService // Используйте интерфейс вместо конкретного типа
+	dbService IOrderService
 	orderChan chan *model.Order
 }
 
-// NewCacheService creates and returns a new Cache instance without a direct dependency on a database service.
-// The database service can be set later using SetDatabaseService method.
+// NewCacheService creates and returns a new Cache instance.
 func NewCacheService(logger *logger.Logger) *Service {
 	return &Service{
 		cache:     make(map[string]*model.Order),
@@ -46,29 +47,31 @@ func NewCacheService(logger *logger.Logger) *Service {
 	}
 }
 
-// SetDatabaseService Adjust the SetDatabaseService method to accept an interface rather than a concrete type.// SetDatabaseService sets the database service that implements the IOrderService interface.
+// SetDatabaseService sets the database service that implements the IOrderService interface.
 func (c *Service) SetDatabaseService(dbService IOrderService) {
 	c.dbService = dbService
 }
 
+// InitCacheWithDBOrders initializes the cache with orders from the database.
 func (c *Service) InitCacheWithDBOrders(ctx context.Context) error {
 	orders, err := c.dbService.ListOrders(ctx)
 	if err != nil {
 		c.logger.Error("Ошибка при получении заказов из базы данных", map[string]interface{}{"error": err})
-		return err // Return the error if there is one
+		return err
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, order := range orders {
-		orderCopy := order // Создаем копию для безопасного сохранения в кэше
+		orderCopy := order
 		c.orders[order.OrderUID] = &orderCopy
 	}
 	c.logger.Info("Кэш инициализирован заказами ", map[string]interface{}{"Значение": len(orders)})
 
-	return nil // Correctly return nil here to indicate success
+	return nil
 }
 
+// ProcessOrder processes an order by sending it to the order channel.
 func (c *Service) ProcessOrder(ctx context.Context, order *model.Order) error {
 	select {
 	case c.orderChan <- order:
@@ -78,17 +81,19 @@ func (c *Service) ProcessOrder(ctx context.Context, order *model.Order) error {
 	}
 }
 
-// Обновите метод GetOrder в cacheService, чтобы он соответствовал ожидаемой сигнатуре
+// GetOrder returns an order by its unique identifier.
 func (s *Service) GetOrder(id string) (*model.Order, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	order, exists := s.cache[id]
 	if !exists {
-		return nil, errors.New("order not found")
+		return nil, fmt.Errorf("order with ID %s not found", id)
 	}
 	return order, nil
 }
 
+// GetAllOrderIDs returns all unique order IDs.
 func (s *Service) GetAllOrderIDs() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -99,6 +104,7 @@ func (s *Service) GetAllOrderIDs() []string {
 	return ids
 }
 
+// AddOrUpdateOrder adds or updates an order in the cache.
 func (s *Service) AddOrUpdateOrder(order *model.Order) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,6 +112,7 @@ func (s *Service) AddOrUpdateOrder(order *model.Order) error {
 	return nil
 }
 
+// GetData returns all orders from the cache.
 func (c *Service) GetData() ([]model.Order, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -117,6 +124,7 @@ func (c *Service) GetData() ([]model.Order, error) {
 	return orders, nil
 }
 
+// UpdateOrderInCache updates an order in the cache.
 func (c *Service) UpdateOrderInCache(_ context.Context, order *model.Order) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -131,15 +139,14 @@ func (c *Service) UpdateOrderInCache(_ context.Context, order *model.Order) erro
 	return nil
 }
 
+// GetOrderFromCache returns an order from the cache by its unique identifier.
 func (c *Service) GetOrderFromCache(_ context.Context, orderUID string) (*model.Order, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	// Пытаемся найти заказ в кэше по его UID
 	if order, exists := c.orders[orderUID]; exists {
 		return order, nil
 	}
-	// Если заказ не найден в кэше, возвращаем ошибку
 	return nil, fmt.Errorf("заказ с UID %s не найден в кэше", orderUID)
 }
 
@@ -175,11 +182,4 @@ func (s *Service) LoadOrdersFromDB(ctx context.Context, db *sql.DB) error {
 
 	s.logger.Info("Orders loaded from database into cache")
 	return nil
-}
-
-func (s *Service) CacheOrder(id string) (*model.Order, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	order, exists := s.cache[id]
-	return order, exists
 }
