@@ -88,19 +88,19 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 		appLogger.Fatal("Ошибка при инициализации кэша заказами из базы данных: ", err)
 	}
 
-    // Continue with application setup...
-    handler := httpQS.NewHandler(cacheService, appLogger)
-    server := &http.Server{
-        Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
-        Handler: handler,
-    }
+	// Continue with application setup...
+	handler := httpQS.NewHandler(cacheService, appLogger)
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
+		Handler: handler,
+	}
 
-    go func() {
-        appLogger.Info("HTTP сервер запущен на порту ", cfg.GetServerPort())
-        if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-            appLogger.Fatal("Ошибка при запуске HTTP сервера: ", err)
-        }
-    }()
+	go func() {
+		appLogger.Info("HTTP сервер запущен на порту ", cfg.GetServerPort())
+		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			appLogger.Fatal("Ошибка при запуске HTTP сервера: ", err)
+		}
+	}()
 
 	natsListener, err := subscription.NewOrderListener(cfg.GetNATSURL(), cfg.GetNATSClusterID(), cfg.GetNATSClientID(), cacheService, dbService, appLogger)
 	if err != nil {
