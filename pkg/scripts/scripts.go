@@ -28,7 +28,7 @@ func generateRandomOrder() model.Order {
 	currency := currencies[rand.Intn(len(currencies))]
 	locale := locales[rand.Intn(len(locales))]
 	amount := rand.Intn(10000) + 100
-	paymentDt := int(time.Now().Unix())
+	paymentDt := int64(time.Now().Unix()) // Convert to int64
 	deliveryCost := rand.Intn(1000) + 100
 	goodsTotal := rand.Intn(10000) + 500
 	customFee := rand.Intn(1000)
@@ -83,7 +83,7 @@ func generateRandomOrder() model.Order {
 			Currency:     &currency,
 			Provider:     &provider,
 			Amount:       &amount,
-			PaymentDt:    &paymentDt,
+			PaymentDt:    &paymentDt, // Use the converted int64 value
 			Bank:         &bank,
 			DeliveryCost: &deliveryCost,
 			GoodsTotal:   &goodsTotal,

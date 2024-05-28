@@ -20,12 +20,7 @@ type ILogger interface {
 
 // Logger реализует ILogger и обеспечивает логирование.
 type Logger struct {
-	entry *logrus.Entry // Changed from *logrus.Logger to *logrus.Entry
-}
-
-// WithError adds an error to the log entry.
-func (l *Logger) WithError(err error) *logrus.Entry {
-	return l.entry.WithError(err)
+	entry *logrus.Entry // Используем *logrus.Entry для поддержки цепочечных вызовов
 }
 
 // New создает и возвращает новый экземпляр Logger, настроенный с уровнем логирования.
@@ -43,40 +38,45 @@ func New(logLevel string) *Logger {
 	}
 	logger.SetLevel(level)
 
-	return &Logger{entry: logrus.NewEntry(logger)} // Initialize Logger with a logrus.Entry
+	return &Logger{entry: logrus.NewEntry(logger)} // Инициализируем Logger с logrus.Entry
 }
 
-// Info logs a message at level Info on the standard logger.
+// Info логирует сообщение на уровне Info.
 func (l *Logger) Info(args ...interface{}) {
 	l.entry.Info(args...)
 }
 
-// Warn logs a message at level Warn on the standard logger.
+// Warn логирует сообщение на уровне Warn.
 func (l *Logger) Warn(args ...interface{}) {
 	l.entry.Warn(args...)
 }
 
-// Error logs a message at level Error on the standard logger.
+// Error логирует сообщение на уровне Error.
 func (l *Logger) Error(args ...interface{}) {
 	l.entry.Error(args...)
 }
 
-// Fatal logs a message at level Fatal on the standard logger.
+// Fatal логирует сообщение на уровне Fatal и завершает выполнение программы.
 func (l *Logger) Fatal(args ...interface{}) {
 	l.entry.Fatal(args...)
 }
 
-// Debug logs a message at level Debug on the standard logger.
+// Debug логирует сообщение на уровне Debug.
 func (l *Logger) Debug(args ...interface{}) {
 	l.entry.Debug(args...)
 }
 
-// WithField добавляет одно поле к записи лога и возвращает ILogger для цепочечного вызова.
+// WithField добавляет одно поле к записи лога и возвращает Logger для цепочечного вызова.
 func (l *Logger) WithField(key string, value interface{}) *Logger {
-	return &Logger{entry: l.entry.WithField(key, value)} // Correctly return a Logger with an updated *logrus.Entry
+	return &Logger{entry: l.entry.WithField(key, value)}
 }
 
-// WithFields добавляет множество полей к записи лога и возвращает ILogger для цепочечного вызова.
+// WithFields добавляет множество полей к записи лога и возвращает Logger для цепочечного вызова.
 func (l *Logger) WithFields(fields map[string]interface{}) *Logger {
-	return &Logger{entry: l.entry.WithFields(fields)} // Correctly return a Logger with an updated *logrus.Entry
+	return &Logger{entry: l.entry.WithFields(fields)}
+}
+
+// WithError добавляет ошибку к записи лога.
+func (l *Logger) WithError(err error) *logrus.Entry {
+	return l.entry.WithError(err)
 }

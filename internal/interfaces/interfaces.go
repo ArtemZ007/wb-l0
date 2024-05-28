@@ -10,9 +10,7 @@ import (
 
 // IService объединяет все сервисы в одном интерфейсе для удобства инъекции зависимостей и тестирования.
 type IService interface {
-	ICacheService
 	ILoggerService
-	IOrderService
 }
 
 // ICacheService определяет интерфейс для работы с кэшем.
@@ -21,6 +19,7 @@ type ICacheService interface {
 	CacheOrder(id string) (*model.Order, bool)
 	GetAllOrderIDs() []string
 	AddOrUpdateOrder(order *model.Order) error
+	GetOrder(id string) (*model.Order, error) // Updated method signature
 }
 
 // ILoggerService определяет интерфейс для логирования.

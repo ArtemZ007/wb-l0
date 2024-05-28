@@ -13,7 +13,6 @@ IF NOT EXISTS (
         AND tablename = 'deliveries'
 ) THEN CREATE TABLE ecommerce.deliveries (
     id UUID PRIMARY KEY,
-    -- Убедитесь, что тип данных UUID
     name TEXT NOT NULL,
     phone TEXT NOT NULL CHECK (phone ~ '^\+\d{1,15}$'),
     zip TEXT NOT NULL,
@@ -53,11 +52,9 @@ IF NOT EXISTS (
         AND tablename = 'orders'
 ) THEN CREATE TABLE ecommerce.orders (
     order_uid UUID PRIMARY KEY,
-    -- Убедитесь, что тип данных UUID
     track_number UUID NOT NULL UNIQUE,
     entry TEXT,
     delivery_id UUID REFERENCES ecommerce.deliveries(id) ON DELETE CASCADE,
-    -- Убедитесь, что тип данных UUID
     payment_id UUID REFERENCES ecommerce.payments(id) ON DELETE CASCADE,
     locale TEXT NOT NULL,
     internal_signature TEXT,
@@ -78,19 +75,16 @@ IF NOT EXISTS (
 ) THEN CREATE TABLE ecommerce.items (
     id UUID PRIMARY KEY,
     chrt_id BIGINT NOT NULL,
-    track_number UUID NOT NULL,
-    price BIGINT NOT NULL CHECK (price > 0),
+    track_number TEXT NOT NULL,
+    price BIGINT NOT NULL,
     rid TEXT NOT NULL,
     name TEXT NOT NULL,
-    sale BIGINT NOT NULL CHECK (sale >= 0),
+    sale INT NOT NULL,
     size TEXT NOT NULL,
-    total_price BIGINT NOT NULL CHECK (total_price > 0),
+    total_price BIGINT NOT NULL,
     nm_id BIGINT NOT NULL,
     brand TEXT NOT NULL,
-    status BIGINT NOT NULL CHECK (
-        status BETWEEN 1 AND 5
-    ),
-    order_uid UUID REFERENCES ecommerce.orders(order_uid) ON DELETE CASCADE
+    status INT NOT NULL
 );
 END IF;
 END $$;

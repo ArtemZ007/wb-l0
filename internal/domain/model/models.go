@@ -1,5 +1,9 @@
 package model
 
+import (
+	"github.com/go-playground/validator/v10"
+)
+
 // Delivery описывает информацию о доставке.
 type Delivery struct {
 	ID      *int    `json:"-" validate:"required"`                     // Идентификатор
@@ -20,7 +24,7 @@ type Payment struct {
 	Currency     *string `json:"currency,omitempty" validate:"required"`        // Валюта
 	Provider     *string `json:"provider,omitempty" validate:"required"`        // Провайдер платежа
 	Amount       *int    `json:"amount,omitempty" validate:"required,gt=0"`     // Сумма
-	PaymentDt    *int    `json:"payment_dt,omitempty" validate:"required,gt=0"` // Дата и время платежа
+	PaymentDt    *int64  `json:"payment_dt,omitempty" validate:"required,gt=0"` // Дата и время платежа
 	Bank         *string `json:"bank,omitempty" validate:"required"`            // Банк
 	DeliveryCost *int    `json:"delivery_cost,omitempty" validate:"gte=0"`      // Стоимость доставки
 	GoodsTotal   *int    `json:"goods_total,omitempty" validate:"gte=0"`        // Общая стоимость товаров
@@ -59,4 +63,10 @@ type Order struct {
 	SMID              *int      `json:"sm_id,omitempty" validate:"omitempty"`              // Идентификатор социальных медиа
 	DateCreated       string    `json:"date_created" validate:"required"`                  // Дата создания заказа
 	OofShard          *string   `json:"oof_shard,omitempty" validate:"omitempty"`          // Шард для OOF
+}
+
+// Validate выполняет валидацию структуры с использованием библиотеки go-playground/validator.
+func (o *Order) Validate() error {
+	validate := validator.New()
+	return validate.Struct(o)
 }

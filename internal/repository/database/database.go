@@ -147,15 +147,11 @@ func (s *Service) saveDeliveryInfo(ctx context.Context, tx *sql.Tx, order *model
 func (s *Service) savePaymentInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
 	paymentQuery := `INSERT INTO ecommerce.payments (id, transaction, request_id, currency, provider, amount, payment_dt, bank, delivery_cost, goods_total, custom_fee) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
-	// Prepare the transaction field as sql.NullString
 	transaction := sql.NullString{Valid: false}
 	if order.Payment.Transaction != nil {
 		transaction = sql.NullString{String: *order.Payment.Transaction, Valid: true}
 	}
 
-	// Ensure other fields are handled similarly if they can be nil
-
-	// Use the correctly prepared transaction variable in the ExecContext call
 	if _, err := tx.ExecContext(ctx, paymentQuery, order.OrderUID, transaction, *order.Payment.RequestID, *order.Payment.Currency, *order.Payment.Provider, *order.Payment.Amount, *order.Payment.PaymentDt, *order.Payment.Bank, *order.Payment.DeliveryCost, *order.Payment.GoodsTotal, *order.Payment.CustomFee); err != nil {
 		s.logger.WithError(err).Error("Ошибка при сохранении информации об оплате")
 		return err
