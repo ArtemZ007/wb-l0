@@ -3,6 +3,8 @@ package cache
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -25,6 +27,7 @@ type IOrderService interface {
 }
 
 type Service struct {
+	cache     map[string]*model.Order
 	mu        sync.RWMutex
 	orders    map[string]*model.Order
 	logger    *logger.Logger
@@ -36,6 +39,7 @@ type Service struct {
 // The database service can be set later using SetDatabaseService method.
 func NewCacheService(logger *logger.Logger) *Service {
 	return &Service{
+		cache:     make(map[string]*model.Order),
 		logger:    logger,
 		orders:    make(map[string]*model.Order),
 		orderChan: make(chan *model.Order),
@@ -46,6 +50,7 @@ func NewCacheService(logger *logger.Logger) *Service {
 func (c *Service) SetDatabaseService(dbService IOrderService) {
 	c.dbService = dbService
 }
+
 func (c *Service) InitCacheWithDBOrders(ctx context.Context) error {
 	orders, err := c.dbService.ListOrders(ctx)
 	if err != nil {
@@ -74,32 +79,30 @@ func (c *Service) ProcessOrder(ctx context.Context, order *model.Order) error {
 }
 
 // Обновите метод GetOrder в cacheService, чтобы он соответствовал ожидаемой сигнатуре
-func (s *Service) GetOrder(id string) (*model.Order, bool) {
+func (s *Service) GetOrder(id string) (*model.Order, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	order, exists := s.orders[id]
+	order, exists := s.cache[id]
 	if !exists {
-		return nil, false
+		return nil, errors.New("order not found")
 	}
-	return order, true
+	return order, nil
 }
 
-func (c *Service) GetAllOrderIDs() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	ids := make([]string, 0, len(c.orders))
-	for id := range c.orders {
+func (s *Service) GetAllOrderIDs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := make([]string, 0, len(s.cache))
+	for id := range s.cache {
 		ids = append(ids, id)
 	}
 	return ids
 }
 
-func (c *Service) AddOrUpdateOrder(order *model.Order) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.orders[order.OrderUID] = order
+func (s *Service) AddOrUpdateOrder(order *model.Order) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cache[order.OrderUID] = order
 	return nil
 }
 
@@ -113,6 +116,7 @@ func (c *Service) GetData() ([]model.Order, error) {
 	}
 	return orders, nil
 }
+
 func (c *Service) UpdateOrderInCache(_ context.Context, order *model.Order) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -138,25 +142,44 @@ func (c *Service) GetOrderFromCache(_ context.Context, orderUID string) (*model.
 	// Если заказ не найден в кэше, возвращаем ошибку
 	return nil, fmt.Errorf("заказ с UID %s не найден в кэше", orderUID)
 }
+
+// LoadOrdersFromDB loads orders from the database and populates the cache.
 func (s *Service) LoadOrdersFromDB(ctx context.Context, db *sql.DB) error {
-	// Получаем заказы из базы данных
-	orders, err := s.dbService.ListOrders(ctx)
+	rows, err := db.QueryContext(ctx, "SELECT id, order_data FROM orders")
 	if err != nil {
-		s.logger.Error("Ошибка при получении заказов из базы данных", map[string]interface{}{"error": err})
 		return err
 	}
+	defer rows.Close()
 
-	// Блокируем мьютекс для безопасного обновления кэша
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Обновляем кэш заказами из базы данных
-	for _, order := range orders {
-		orderCopy := order // Создаем копию для безопасного сохранения в кэше
-		s.orders[order.OrderUID] = &orderCopy
+	for rows.Next() {
+		var id string
+		var orderData []byte
+		if err := rows.Scan(&id, &orderData); err != nil {
+			return err
+		}
+
+		var order model.Order
+		if err := json.Unmarshal(orderData, &order); err != nil {
+			return err
+		}
+
+		s.cache[id] = &order
 	}
 
-	s.logger.Info("Кэш инициализирован заказами из базы данных", map[string]interface{}{"count": len(orders)})
+	if err := rows.Err(); err != nil {
+		return err
+	}
 
+	s.logger.Info("Orders loaded from database into cache")
 	return nil
+}
+
+func (s *Service) CacheOrder(id string) (*model.Order, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	order, exists := s.cache[id]
+	return order, exists
 }

@@ -89,7 +89,7 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 	}
 
 	// Continue with application setup...
-	handler := httpQS.NewHandler(cache.Cache, appLogger)
+	handler := httpQS.NewHandler(cacheService, appLogger)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
 		Handler: handler,
