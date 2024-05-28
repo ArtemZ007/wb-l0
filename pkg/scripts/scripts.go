@@ -2,19 +2,31 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"math/rand"
 	"time"
 
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
-	"github.com/google/uuid"
 	"github.com/nats-io/stan.go"
 )
 
 func generateRandomOrder() model.Order {
-	currency := "RUB"
-	locale := "ru"
+	currencies := []string{"USD", "EUR", "RUB"}
+	locales := []string{"en", "ru", "es"}
+	names := []string{"John Doe", "Jane Smith", "Test Testov"}
+	phones := []string{"+9720000000", "+1234567890", "+9876543210"}
+	zips := []string{"2639809", "12345", "67890"}
+	cities := []string{"Kiryat Mozkin", "New York", "Los Angeles"}
+	addresses := []string{"Ploshad Mira 15", "123 Main St", "456 Elm St"}
+	regions := []string{"Kraiot", "NY", "CA"}
+	emails := []string{"test@gmail.com", "example@example.com", "user@domain.com"}
+	providers := []string{"wbpay", "paypal", "stripe"}
+	banks := []string{"alpha", "beta", "gamma"}
+	itemNames := []string{"Mascaras", "Lipstick", "Foundation"}
+	brands := []string{"Vivienne Sabo", "Maybelline", "L'Oreal"}
+
+	currency := currencies[rand.Intn(len(currencies))]
+	locale := locales[rand.Intn(len(locales))]
 	amount := rand.Intn(10000) + 100
 	paymentDt := int(time.Now().Unix())
 	deliveryCost := rand.Intn(1000) + 100
@@ -25,35 +37,35 @@ func generateRandomOrder() model.Order {
 	sale := rand.Intn(100)
 	totalPrice := rand.Intn(10000) + 100
 	nmID := rand.Intn(100000)
-	status := rand.Intn(5) + 1 // Corrected to match the expected type
+	status := rand.Intn(5) + 1
 
-	entry := "entry_" + uuid.New().String()
-	name := "Name_" + uuid.New().String()
-	phone := fmt.Sprintf("+7%010d", rand.Intn(10000000000)) // Генерация номера телефона в формате +7XXXXXXXXXX
-	zip := "Zip_" + uuid.New().String()
-	city := "City_" + uuid.New().String()
-	address := "Address_" + uuid.New().String()
-	region := "Region_" + uuid.New().String()
-	email := fmt.Sprintf("test%d@example.com", rand.Intn(100000)) // Простая генерация email
-	transaction := uuid.New().String()
-	requestID := uuid.New().String()
-	provider := "Provider_" + uuid.New().String()
-	bank := "Bank_" + uuid.New().String()
-	itemTrackNumber := uuid.New().String()
-	rid := uuid.New().String()
-	itemName := "ItemName_" + uuid.New().String()
-	size := "Size_" + uuid.New().String()
-	brand := "Brand_" + uuid.New().String()
-	internalSignature := uuid.New().String()
-	customerID := uuid.New().String()
-	deliveryService := "DeliveryService_" + uuid.New().String()
-	shardkey := uuid.New().String()
-	oofShard := uuid.New().String()
-	smID := rand.Int()                 // This generates a random int
-	trackNumber := uuid.New().String() // Corrected: Definition of trackNumber
+	entry := "WBIL"
+	name := names[rand.Intn(len(names))]
+	phone := phones[rand.Intn(len(phones))]
+	zip := zips[rand.Intn(len(zips))]
+	city := cities[rand.Intn(len(cities))]
+	address := addresses[rand.Intn(len(addresses))]
+	region := regions[rand.Intn(len(regions))]
+	email := emails[rand.Intn(len(emails))]
+	transaction := "test-transaction"
+	requestID := "test-request"
+	provider := providers[rand.Intn(len(providers))]
+	bank := banks[rand.Intn(len(banks))]
+	itemTrackNumber := "WBILMTESTTRACK"
+	rid := "test-rid"
+	itemName := itemNames[rand.Intn(len(itemNames))]
+	size := "0"
+	brand := brands[rand.Intn(len(brands))]
+	internalSignature := ""
+	customerID := "test"
+	deliveryService := "meest"
+	shardkey := "9"
+	oofShard := "1"
+	smID := 99
+	trackNumber := "WBILMTESTTRACK"
 
 	return model.Order{
-		OrderUID:    uuid.New().String(),
+		OrderUID:    "b563feb7b2b84b6test",
 		TrackNumber: &trackNumber,
 		Entry:       &entry,
 		Delivery: &model.Delivery{

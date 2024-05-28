@@ -35,7 +35,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Не удалось инициализировать логгер\n")
 		os.Exit(1)
 	}
-	// Initialize the database service
+
 	if *flagCmd == "start" {
 		appLogger.Info("Запуск приложения")
 		startApp(cfg, appLogger)
@@ -45,7 +45,6 @@ func main() {
 }
 
 func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
-	// Initialize a connection to the database
 	db, err := sql.Open("postgres", cfg.GetDBConnectionString())
 	if err != nil {
 		appLogger.Fatal("Ошибка при подключении к базе данных: ", err)
@@ -56,46 +55,37 @@ func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
 		}
 	}()
 
-	// Check the database connection
 	if err := db.Ping(); err != nil {
 		appLogger.Fatal("Не удалось подключиться к базе данных: ", err)
 	}
 
-	// Create the database service with the established connection
 	dbService, err := database.NewService(db, appLogger)
 	if err != nil {
 		appLogger.Fatal("Ошибка при создании сервиса базы данных: ", err)
 	}
 
-	// Log dbService to ensure it's not nil
 	appLogger.Info("dbService инициализирован: ", dbService)
 
-	// Create the cache service
 	cacheService := cache.NewCacheService(appLogger)
 	if cacheService == nil {
 		appLogger.Fatal("Не удалось создать сервис кэша")
 	}
 
-	// Log cacheService to ensure it's not nil
 	appLogger.Info("cacheService инициализирован: ", cacheService)
 
-	// Set the database service for the cache service
 	cacheService.SetDatabaseService(dbService)
 
-	// Now safe to call InitCacheWithDBOrders
 	ctx := context.Background()
 	if err := cacheService.InitCacheWithDBOrders(ctx); err != nil {
 		appLogger.Fatal("Ошибка при инициализации кэша заказами из базы данных: ", err)
 	}
 
-	// Continue with application setup...
-	handler := httpQS.NewHandler(cacheService, appLogger) // http.Handler is an http.Handler interface
+	handler := httpQS.NewHandler(cacheService, appLogger)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
 		Handler: handler,
 	}
 
-	// Start the HTTP server
 	go func() {
 		appLogger.Info("HTTP сервер запущен на порту ", cfg.GetServerPort())
 		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
@@ -128,6 +118,7 @@ func waitForShutdownSignal(appLogger *logger.Logger) <-chan os.Signal {
 	go func() {
 		sig := <-signals
 		appLogger.Info("Получен сигнал для завершения работы: ", sig)
+		close(signals) // Закрываем канал после получения сигнала
 	}()
 
 	return signals

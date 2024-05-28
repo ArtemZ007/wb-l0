@@ -6,131 +6,115 @@ import (
 	"sync"
 
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
-	"github.com/ArtemZ007/wb-l0/pkg/logger"
+	"github.com/sirupsen/logrus"
 )
 
-type Cache interface {
-	GetOrder(id string) (*model.Order, bool)
-	GetAllOrderIDs() []string
-	AddOrUpdateOrder(order *model.Order) error
-	GetData() ([]model.Order, error)
-	ProcessOrder(ctx context.Context, order *model.Order) error
-	UpdateOrderInCache(ctx context.Context, order *model.Order) error
-	GetOrderFromCache(ctx context.Context, orderUID string) (*model.Order, error)
-}
-
+// IOrderService определяет интерфейс для работы с заказами.
 type IOrderService interface {
-	ListOrders(ctx context.Context) ([]model.Order, error)
+	GetAllOrders(ctx context.Context) ([]model.Order, error)
 }
 
+// Service предоставляет методы для работы с кэшем заказов.
 type Service struct {
 	mu        sync.RWMutex
+	logger    *logrus.Logger
 	orders    map[string]*model.Order
-	logger    *logger.Logger
-	dbService IOrderService // Используйте интерфейс вместо конкретного типа
-	orderChan chan *model.Order
+	dbService IOrderService
 }
 
-// NewCacheService creates and returns a new Cache instance without a direct dependency on a database service.
-// The database service can be set later using SetDatabaseService method.
-func NewCacheService(logger *logger.Logger) *Service {
+// NewService создает новый экземпляр Service.
+func NewService(logger *logrus.Logger) *Service {
 	return &Service{
-		logger:    logger,
-		orders:    make(map[string]*model.Order),
-		orderChan: make(chan *model.Order),
+		logger: logger,
+		orders: make(map[string]*model.Order),
 	}
 }
 
-// SetDatabaseService Adjust the SetDatabaseService method to accept an interface rather than a concrete type.// SetDatabaseService sets the database service that implements the IOrderService interface.
-func (c *Service) SetDatabaseService(dbService IOrderService) {
-	c.dbService = dbService
+// SetDatabaseService устанавливает зависимость от сервиса базы данных.
+func (s *Service) SetDatabaseService(dbService IOrderService) {
+	s.dbService = dbService
 }
-func (c *Service) InitCacheWithDBOrders(ctx context.Context) error {
-	orders, err := c.dbService.ListOrders(ctx)
+
+// InitCacheWithDBOrders инициализирует кэш заказов из базы данных.
+func (s *Service) InitCacheWithDBOrders(ctx context.Context) error {
+	orders, err := s.dbService.GetAllOrders(ctx)
 	if err != nil {
-		c.logger.Error("Ошибка при получении заказов из базы данных", map[string]interface{}{"error": err})
-		return err // Return the error if there is one
+		s.logger.WithError(err).Error("Ошибка при получении заказов из базы данных")
+		return err
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	for _, order := range orders {
-		orderCopy := order // Создаем копию для безопасного сохранения в кэше
-		c.orders[order.OrderUID] = &orderCopy
+		// Создаем копию заказа для безопасного сохранения в кэше.
+		orderCopy := order
+		s.orders[order.OrderUID] = &orderCopy
 	}
-	c.logger.Info("Кэш инициализирован заказами ", map[string]interface{}{"Значение": len(orders)})
 
-	return nil // Correctly return nil here to indicate success
-}
-
-func (c *Service) ProcessOrder(ctx context.Context, order *model.Order) error {
-	select {
-	case c.orderChan <- order:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (c *Service) GetOrder(id string) (*model.Order, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	order, exists := c.orders[id]
-	return order, exists
-}
-
-func (c *Service) GetAllOrderIDs() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	ids := make([]string, 0, len(c.orders))
-	for id := range c.orders {
-		ids = append(ids, id)
-	}
-	return ids
-}
-
-func (c *Service) AddOrUpdateOrder(order *model.Order) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.orders[order.OrderUID] = order
+	s.logger.Info("Кэш успешно инициализирован из базы данных")
 	return nil
 }
 
-func (c *Service) GetData() ([]model.Order, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+// GetAllOrders возвращает все заказы из кэша.
+func (s *Service) GetAllOrders(ctx context.Context) ([]model.Order, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	orders := make([]model.Order, 0, len(c.orders))
-	for _, order := range c.orders {
+	orders := make([]model.Order, 0, len(s.orders))
+	for _, order := range s.orders {
 		orders = append(orders, *order)
 	}
+
 	return orders, nil
 }
-func (c *Service) UpdateOrderInCache(_ context.Context, order *model.Order) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
-	if _, exists := c.orders[order.OrderUID]; exists {
-		c.logger.Info("Заказ уже существует в кэше и будет обновлен", map[string]interface{}{"orderUID": order.OrderUID})
-	} else {
-		c.logger.Info("Заказ добавлен в кэш", map[string]interface{}{"orderUID": order.OrderUID})
+// GetOrder возвращает заказ по его уникальному идентификатору.
+func (s *Service) GetOrder(ctx context.Context, orderUID string) (*model.Order, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	order, exists := s.orders[orderUID]
+	if !exists {
+		return nil, fmt.Errorf("заказ с UID: %s не найден", orderUID)
 	}
 
-	c.orders[order.OrderUID] = order
+	return order, nil
+}
+
+// SaveOrder сохраняет заказ в кэше.
+func (s *Service) SaveOrder(ctx context.Context, order *model.Order) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Создаем копию заказа для безопасного сохранения в кэше.
+	orderCopy := *order
+	s.orders[order.OrderUID] = &orderCopy
+
+	s.logger.WithField("order_uid", order.OrderUID).Info("Заказ успешно сохранен в кэше")
 	return nil
 }
 
-func (c *Service) GetOrderFromCache(_ context.Context, orderUID string) (*model.Order, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+// UpdateOrder обновляет информацию о заказе в кэше.
+func (s *Service) UpdateOrder(ctx context.Context, order *model.Order) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Пытаемся найти заказ в кэше по его UID
-	if order, exists := c.orders[orderUID]; exists {
-		return order, nil
-	}
-	// Если заказ не найден в кэше, возвращаем ошибку
-	return nil, fmt.Errorf("заказ с UID %s не найден в кэше", orderUID)
+	// Создаем копию заказа для безопасного обновления в кэше.
+	orderCopy := *order
+	s.orders[order.OrderUID] = &orderCopy
+
+	s.logger.WithField("order_uid", order.OrderUID).Info("Заказ успешно обновлен в кэше")
+	return nil
+}
+
+// DeleteOrder удаляет заказ из кэша.
+func (s *Service) DeleteOrder(ctx context.Context, orderUID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.orders, orderUID)
+
+	s.logger.WithField("order_uid", orderUID).Info("Заказ успешно удален из кэша")
+	return nil
 }
