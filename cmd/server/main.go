@@ -16,6 +16,7 @@ import (
 	"github.com/ArtemZ007/wb-l0/pkg/config"
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	_ "github.com/lib/pq"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -54,7 +55,7 @@ func runApp(cfg config.IConfiguration, log logger.Logger) error {
 	log.Info("Запуск приложения")
 
 	// Инициализируем сервис базы данных
-	dbService, err := database.NewService(db, log)
+	dbService, err := database.NewService(db, logrus.New())
 	if err != nil {
 		log.Error("Ошибка создания сервиса базы данных: ", err)
 		return err
@@ -80,7 +81,7 @@ func runApp(cfg config.IConfiguration, log logger.Logger) error {
 	}
 
 	// Инициализируем HTTP обработчик
-	handler := httpQS.NewHandler(cacheService, log)
+	handler := http.NewHandler(cacheService, log)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
 		Handler: handler,
