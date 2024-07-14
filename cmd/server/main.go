@@ -11,11 +11,12 @@ import (
 	"syscall"
 
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
-	"github.com/ArtemZ007/wb-l0/internal/repository/database"
+	_ "github.com/ArtemZ007/wb-l0/internal/repository/database"
 	"github.com/ArtemZ007/wb-l0/internal/subscription"
 	"github.com/ArtemZ007/wb-l0/pkg/config"
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	_ "github.com/lib/pq"
+	httpQS "github.com/ArtemZ007/wb-l0/internal/delivery/http"
 	"github.com/sirupsen/logrus"
 )
 
@@ -81,7 +82,7 @@ func runApp(cfg config.IConfiguration, log logger.Logger) error {
 	}
 
 	// Инициализируем HTTP обработчик
-	handler := http.NewHandler(cacheService, log)
+	handler := httpQS.NewService(cacheService, log)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
 		Handler: handler,
