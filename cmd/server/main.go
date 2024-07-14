@@ -4,14 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
-	httpQS "github.com/ArtemZ007/wb-l0/internal/delivery/http"
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"github.com/ArtemZ007/wb-l0/internal/repository/database"
 	"github.com/ArtemZ007/wb-l0/internal/subscription"
@@ -21,113 +19,120 @@ import (
 )
 
 func main() {
-	flagCmd := flag.String("cmd", "start", "команда для выполнения: start для запуска, stop для остановки")
-	flag.Parse()
+	// Загружаем конфигурацию
+	cfg := loadConfig()
 
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Ошибка при загрузке конфигурации: %v\n", err)
-		os.Exit(1)
-	}
+	// Инициализируем логгер
+	log := logger.New(cfg.GetLogLevel())
 
-	appLogger := logger.New(cfg.GetLogLevel())
-	if appLogger == nil {
-		fmt.Fprintf(os.Stderr, "Не удалось инициализировать логгер\n")
-		os.Exit(1)
-	}
-
-	if *flagCmd == "start" {
-		appLogger.Info("Запуск приложения")
-		startApp(cfg, appLogger)
-	} else {
-		appLogger.Info("Остановка приложения через CLI не поддерживается")
+	// Запускаем приложение
+	if err := runApp(cfg, log); err != nil {
+		log.Fatal("Ошибка запуска приложения: ", err)
 	}
 }
 
-func startApp(cfg config.IConfiguration, appLogger *logger.Logger) {
-	// Initialize a connection to the database
+// runApp запускает основное приложение
+func runApp(cfg config.IConfiguration, log logger.Logger) error {
+	// Подключаемся к базе данных
 	db, err := sql.Open("postgres", cfg.GetDBConnectionString())
 	if err != nil {
-		appLogger.Fatal("Ошибка при подключении к базе данных: ", err)
+		log.Error("Ошибка подключения к базе данных: ", err)
+		return err
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			appLogger.Error("Ошибка при закрытии соединения с базой данных: ", err)
+			log.Error("Ошибка при закрытии соединения с базой данных: ", err)
 		}
 	}()
 
-	// Check the database connection
+	// Проверяем соединение с базой данных
 	if err := db.Ping(); err != nil {
-		appLogger.Fatal("Не удалось подключиться к базе данных: ", err)
+		log.Error("Не удалось подключиться к базе данных: ", err)
+		return err
 	}
+	log.Info("Успешное подключение к базе данных")
+	log.Info("Запуск приложения")
 
-	// Create the database service with the established connection
-	dbService, err := database.NewService(db, appLogger)
+	// Инициализируем сервис базы данных
+	dbService, err := database.NewService(db, log)
 	if err != nil {
-		appLogger.Fatal("Ошибка при создании сервиса базы данных: ", err)
+		log.Error("Ошибка создания сервиса базы данных: ", err)
+		return err
 	}
+	log.Info("Сервис базы данных инициализирован")
 
-	// Log dbService to ensure it's not nil
-	appLogger.Info("dbService инициализирован: ", dbService)
-
-	// Create the cache service
-	cacheService := cache.NewCacheService(appLogger)
+	// Инициализируем сервис кэша
+	cacheService := cache.NewService(cfg.GetRedisAddr(), cfg.GetRedisPassword(), cfg.GetRedisDB(), log)
 	if cacheService == nil {
-		appLogger.Fatal("Не удалось создать сервис кэша")
+		log.Error("Не удалось создать сервис кэша")
+		return errors.New("не удалось создать сервис кэша")
 	}
+	log.Info("Сервис кэша инициализирован")
 
-	// Log cacheService to ensure it's not nil
-	appLogger.Info("cacheService инициализирован: ", cacheService)
+	// Устанавливаем сервис базы данных для кэша
+	cacheService.SetDBService(dbService)
 
-	// Set the database service for the cache service
-	cacheService.SetDatabaseService(dbService)
-
-	// Now safe to call InitCacheWithDBOrders
+	// Инициализируем кэш данными из базы данных
 	ctx := context.Background()
 	if err := cacheService.InitCacheWithDBOrders(ctx); err != nil {
-		appLogger.Fatal("Ошибка при инициализации кэша заказами из базы данных: ", err)
+		log.Error("Ошибка инициализации кэша данными из базы данных: ", err)
+		return err
 	}
 
-    // Continue with application setup...
-    handler := httpQS.NewHandler(cacheService, appLogger)
-    server := &http.Server{
-        Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
-        Handler: handler,
-    }
-
-    go func() {
-        appLogger.Info("HTTP сервер запущен на порту ", cfg.GetServerPort())
-        if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-            appLogger.Fatal("Ошибка при запуске HTTP сервера: ", err)
-        }
-    }()
-
-	natsListener, err := subscription.NewOrderListener(cfg.GetNATSURL(), cfg.GetNATSClusterID(), cfg.GetNATSClientID(), cacheService, dbService, appLogger)
-	if err != nil {
-		appLogger.Fatal("Ошибка инициализации слушателя NATS: ", err)
+	// Инициализируем HTTP обработчик
+	handler := httpQS.NewHandler(cacheService, log)
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
+		Handler: handler,
 	}
 
+	// Запускаем HTTP сервер в отдельной горутине
 	go func() {
-		if err := natsListener.Start(ctx); err != nil {
-			appLogger.Fatal("Ошибка при запуске слушателя NATS: ", err)
+		log.Info("HTTP сервер запущен на порту ", cfg.GetServerPort())
+		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Error("Ошибка HTTP сервера: ", err)
 		}
 	}()
 
-	<-waitForShutdownSignal(appLogger)
-
-	if err := server.Shutdown(context.Background()); err != nil {
-		appLogger.Error("Ошибка при остановке HTTP сервера: ", err)
+	// Инициализируем NATS слушатель
+	natsListener, err := subscription.NewListener(cfg.GetNATSURL(), cfg.GetNATSClusterID(), cfg.GetNATSClientID(), cacheService, dbService, log)
+	if err != nil {
+		log.Error("Ошибка инициализации NATS слушателя: ", err)
+		return err
 	}
-}
 
-func waitForShutdownSignal(appLogger *logger.Logger) <-chan os.Signal {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-
+	// Запускаем NATS слушатель в отдельной горутине
 	go func() {
-		sig := <-signals
-		appLogger.Info("Получен сигнал для завершения работы: ", sig)
+		if err := natsListener.Start(ctx); err != nil {
+			log.Error("Ошибка NATS слушателя: ", err)
+		}
 	}()
 
-	return signals
+	// Ожидаем сигнал завершения работы
+	<-waitForShutdownSignal(log)
+
+	// Завершаем работу HTTP сервера
+	if err := server.Shutdown(context.Background()); err != nil {
+		log.Error("Ошибка завершения работы HTTP сервера: ", err)
+	}
+
+	return nil
+}
+
+// waitForShutdownSignal ожидает сигнал завершения работы и возвращает канал, который закрывается при получении сигнала
+func waitForShutdownSignal(log logger.Logger) <-chan struct{} {
+	stop := make(chan struct{})
+	go func() {
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+		<-sigint
+		log.Info("Получен сигнал завершения работы")
+		close(stop)
+	}()
+	return stop
+}
+
+// loadConfig загружает конфигурацию приложения
+func loadConfig() config.IConfiguration {
+	return config.NewConfiguration()
 }

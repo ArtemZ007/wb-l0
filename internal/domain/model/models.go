@@ -49,6 +49,7 @@ type Item struct {
 
 // Order описывает структуру заказа.
 type Order struct {
+	ID                string    `json:"id" validate:"required,uuid4"`
 	OrderUID          string    `json:"order_uid" validate:"required,uuid4"`               // Уникальный идентификатор заказа
 	TrackNumber       *string   `json:"track_number,omitempty" validate:"omitempty,uuid4"` // Номер отслеживания заказа
 	Entry             *string   `json:"entry,omitempty" validate:"omitempty"`              // Точка входа

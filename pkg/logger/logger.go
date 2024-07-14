@@ -6,25 +6,25 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ILogger определяет интерфейс для логирования.
-type ILogger interface {
+// Logger определяет интерфейс для логирования.
+type Logger interface {
 	Info(args ...interface{})
 	Warn(args ...interface{})
 	Error(args ...interface{})
 	Fatal(args ...interface{})
 	Debug(args ...interface{})
-	WithField(key string, value interface{}) *Logger
-	WithFields(fields map[string]interface{}) *Logger
+	WithField(key string, value interface{}) Logger
+	WithFields(fields map[string]interface{}) Logger
 	WithError(err error) *logrus.Entry
 }
 
-// Logger реализует ILogger и обеспечивает логирование.
-type Logger struct {
-	entry *logrus.Entry // Используем *logrus.Entry для поддержки цепочечных вызовов
+// LogrusAdapter адаптирует logrus.Logger к интерфейсу Logger.
+type LogrusAdapter struct {
+	logger *logrus.Logger
 }
 
-// New создает и возвращает новый экземпляр Logger, настроенный с уровнем логирования.
-func New(logLevel string) *Logger {
+// New создает и возвращает новый экземпляр LogrusAdapter, настроенный с уровнем логирования.
+func New(logLevel string) *LogrusAdapter {
 	logger := logrus.New()
 	logger.Formatter = &logrus.TextFormatter{
 		FullTimestamp: true,
@@ -38,45 +38,45 @@ func New(logLevel string) *Logger {
 	}
 	logger.SetLevel(level)
 
-	return &Logger{entry: logrus.NewEntry(logger)} // Инициализируем Logger с logrus.Entry
+	return &LogrusAdapter{logger: logger}
 }
 
 // Info логирует сообщение на уровне Info.
-func (l *Logger) Info(args ...interface{}) {
-	l.entry.Info(args...)
+func (l *LogrusAdapter) Info(args ...interface{}) {
+	l.logger.Info(args...)
 }
 
 // Warn логирует сообщение на уровне Warn.
-func (l *Logger) Warn(args ...interface{}) {
-	l.entry.Warn(args...)
+func (l *LogrusAdapter) Warn(args ...interface{}) {
+	l.logger.Warn(args...)
 }
 
 // Error логирует сообщение на уровне Error.
-func (l *Logger) Error(args ...interface{}) {
-	l.entry.Error(args...)
+func (l *LogrusAdapter) Error(args ...interface{}) {
+	l.logger.Error(args...)
 }
 
 // Fatal логирует сообщение на уровне Fatal и завершает выполнение программы.
-func (l *Logger) Fatal(args ...interface{}) {
-	l.entry.Fatal(args...)
+func (l *LogrusAdapter) Fatal(args ...interface{}) {
+	l.logger.Fatal(args...)
 }
 
 // Debug логирует сообщение на уровне Debug.
-func (l *Logger) Debug(args ...interface{}) {
-	l.entry.Debug(args...)
+func (l *LogrusAdapter) Debug(args ...interface{}) {
+	l.logger.Debug(args...)
 }
 
 // WithField добавляет одно поле к записи лога и возвращает Logger для цепочечного вызова.
-func (l *Logger) WithField(key string, value interface{}) *Logger {
-	return &Logger{entry: l.entry.WithField(key, value)}
+func (l *LogrusAdapter) WithField(key string, value interface{}) Logger {
+	return &LogrusAdapter{logger: l.logger.WithField(key, value).Logger}
 }
 
 // WithFields добавляет множество полей к записи лога и возвращает Logger для цепочечного вызова.
-func (l *Logger) WithFields(fields map[string]interface{}) *Logger {
-	return &Logger{entry: l.entry.WithFields(fields)}
+func (l *LogrusAdapter) WithFields(fields map[string]interface{}) Logger {
+	return &LogrusAdapter{logger: l.logger.WithFields(fields).Logger}
 }
 
 // WithError добавляет ошибку к записи лога.
-func (l *Logger) WithError(err error) *logrus.Entry {
-	return l.entry.WithError(err)
+func (l *LogrusAdapter) WithError(err error) *logrus.Entry {
+	return l.logger.WithError(err)
 }
