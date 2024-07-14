@@ -83,7 +83,8 @@ func runApp(cfg config.IConfiguration, log logger.Logger) error {
 	}
 
 	// Инициализируем HTTP обработчик
-	handler := httpQS.NewService(cacheService)
+	logger := logrus.New() // Убедитесь, что здесь используется ваша инициализация логгера
+	handler := httpQS.NewHandler(cacheService, logger)
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
 		Handler: handler,
