@@ -10,13 +10,13 @@ import (
 
 // ValidationError представляет ошибку валидации для поля.
 type ValidationError struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
+	Field   string `json:"field"`   // Поле, в котором произошла ошибка
+	Message string `json:"message"` // Сообщение об ошибке
 }
 
 // Service предоставляет методы для валидации моделей.
 type Service struct {
-	logger *log.Logger
+	logger *log.Logger // Логгер для записи логов
 }
 
 // NewService создает новый экземпляр Service.
@@ -36,12 +36,14 @@ func (s *Service) ValidateOrder(orderData *model.Order) []*ValidationError {
 			Field:   "OrderUID",
 			Message: "Поле OrderUID обязательно для заполнения",
 		})
+		s.logger.Println("Ошибка валидации: поле OrderUID обязательно для заполнения")
 	} else if !isValidUUID(orderData.OrderUID) {
 		// Проверка формата UUID
 		validationErrors = append(validationErrors, &ValidationError{
 			Field:   "OrderUID",
 			Message: "Поле OrderUID должно быть действительным UUID v4",
 		})
+		s.logger.Println("Ошибка валидации: поле OrderUID должно быть действительным UUID v4")
 	}
 
 	// Добавьте другие проверки по необходимости

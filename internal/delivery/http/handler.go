@@ -8,6 +8,69 @@ import (
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 )
 
+const (
+	contentTypeHeader = "Content-Type"
+	contentTypeJSON   = "application/json"
+	contentTypeHTML   = "text/html"
+	serverErrorMsg    = "Внутренняя ошибка сервера"
+)
+
+// Handler представляет HTTP обработчик
+type Handler struct {
+	dataService DataService   // Сервис для работы с данными
+	logger      logger.Logger // Логгер для регистрации событий
+}
+
+// NewHandler создает новый экземпляр HTTP обработчика
+func NewHandler(dataService DataService, logger logger.Logger) *Handler {
+	return &Handler{
+		dataService: dataService,
+		logger:      logger,
+	}
+}
+
+// handleOrder обрабатывает запросы на получение заказа
+func (h *Handler) handleOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.writeJSONError(w, "Неподдерживаемый метод", http.StatusMethodNotAllowed)
+		return
+	}
+
+	orderUID := r.URL.Query().Get("uid")
+	if orderUID == "" {
+		h.writeJSONError(w, "Отсутствует параметр uid", http.StatusBadRequest)
+		return
+	}
+
+	order, err := h.dataService.GetOrder(orderUID)
+	if err != nil {
+		h.logger.Error("Ошибка при получении заказа: ", err)
+		h.writeJSONError(w, serverErrorMsg, http.StatusInternalServerError)
+		return
+	}
+
+	if order == nil {
+		h.writeJSONError(w, "Заказ не найден", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set(contentTypeHeader, contentTypeJSON)
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(order); err != nil {
+		h.logger.Error("Ошибка при кодировании ответа: ", err)
+		h.writeJSONError(w, serverErrorMsg, http.StatusInternalServerError)
+	}
+}
+
+// writeJSONError записывает ошибку в формате JSON в ответ
+func (h *Handler) writeJSONError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set(contentTypeHeader, contentTypeJSON)
+	w.WriteHeader(statusCode)
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		h.logger.Error("Ошибка при кодировании ошибки: ", err)
+	}
+}
+
 // DataService интерфейс, определяющий методы для работы с данными.
 type DataService interface {
 	GetData() ([]model.Order, bool)
@@ -48,27 +111,6 @@ func (s *Service) GetOrder(orderUID string) (*model.Order, error) {
 	}
 	return order, nil
 }
-
-// Handler структура обработчика HTTP-запросов.
-type Handler struct {
-	dataService DataService   // Сервис для работы с данными
-	logger      logger.Logger // Логгер для регистрации событий
-}
-
-// NewHandler функция для создания нового экземпляра Handler.
-func NewHandler(dataService DataService, logger logger.Logger) *Handler {
-	return &Handler{
-		dataService: dataService,
-		logger:      logger,
-	}
-}
-
-const (
-	contentTypeHeader = "Content-Type"
-	contentTypeHTML   = "text/html"
-	contentTypeJSON   = "application/json"
-	serverErrorMsg    = "Ошибка сервера"
-)
 
 // ServeHTTP метод для обработки HTTP-запросов.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -118,44 +160,4 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write([]byte("</table></body></html>"))
-}
-
-// handleOrder метод для обработки запросов к маршруту заказа.
-func (h *Handler) handleOrder(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		h.writeJSONError(w, "Неподдерживаемый метод", http.StatusMethodNotAllowed)
-		return
-	}
-
-	orderUID := r.URL.Query().Get("uid")
-	if orderUID == "" {
-		h.writeJSONError(w, "Отсутствует параметр uid", http.StatusBadRequest)
-		return
-	}
-
-	order, err := h.dataService.GetOrder(orderUID)
-	if err != nil {
-		h.logger.Error("Ошибка при получении заказа: ", err)
-		h.writeJSONError(w, serverErrorMsg, http.StatusInternalServerError)
-		return
-	}
-
-	if order == nil {
-		h.writeJSONError(w, "Заказ не найден", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set(contentTypeHeader, contentTypeJSON)
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(order); err != nil {
-		h.logger.Error("Ошибка при кодировании ответа: ", err)
-		h.writeJSONError(w, serverErrorMsg, http.StatusInternalServerError)
-	}
-}
-
-// writeJSONError метод для записи ошибки в формате JSON.
-func (h *Handler) writeJSONError(w http.ResponseWriter, message string, statusCode int) {
-	w.Header().Set(contentTypeHeader, contentTypeJSON)
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

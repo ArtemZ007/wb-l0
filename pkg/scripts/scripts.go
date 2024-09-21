@@ -10,6 +10,7 @@ import (
 	"github.com/nats-io/stan.go"
 )
 
+// generateRandomOrder генерирует случайный заказ для отправки
 func generateRandomOrder() model.Order {
 	currencies := []string{"USD", "EUR", "RUB"}
 	locales := []string{"en", "ru", "es"}
@@ -28,7 +29,7 @@ func generateRandomOrder() model.Order {
 	currency := currencies[rand.Intn(len(currencies))]
 	locale := locales[rand.Intn(len(locales))]
 	amount := rand.Intn(10000) + 100
-	paymentDt := int64(time.Now().Unix()) // Convert to int64
+	paymentDt := time.Now().Unix()
 	deliveryCost := rand.Intn(1000) + 100
 	goodsTotal := rand.Intn(10000) + 500
 	customFee := rand.Intn(1000)
@@ -83,7 +84,7 @@ func generateRandomOrder() model.Order {
 			Currency:     &currency,
 			Provider:     &provider,
 			Amount:       &amount,
-			PaymentDt:    &paymentDt, // Use the converted int64 value
+			PaymentDt:    &paymentDt,
 			Bank:         &bank,
 			DeliveryCost: &deliveryCost,
 			GoodsTotal:   &goodsTotal,
@@ -119,7 +120,7 @@ func main() {
 	// Подключение к NATS Streaming
 	sc, err := stan.Connect("test-cluster", "publisher", stan.NatsURL("nats://localhost:4222"))
 	if err != nil {
-		log.Fatal("Ошибка подключения к NATS Streaming:", err)
+		log.Fatalf("Ошибка подключения к NATS Streaming: %v", err)
 	}
 	defer func() {
 		if closeErr := sc.Close(); closeErr != nil {
@@ -132,13 +133,13 @@ func main() {
 		order := generateRandomOrder()
 		data, err := json.Marshal(order)
 		if err != nil {
-			log.Println("Ошибка при маршалинге заказа:", err)
+			log.Printf("Ошибка при маршалинге заказа: %v", err)
 			continue
 		}
 
 		// Отправка сообщения
 		if err := sc.Publish("orders", data); err != nil {
-			log.Println("Ошибка при публикации сообщения:", err)
+			log.Printf("Ошибка при публикации сообщения: %v", err)
 			continue
 		}
 

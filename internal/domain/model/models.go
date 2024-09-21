@@ -1,6 +1,8 @@
 package model
 
 import (
+	"log"
+
 	"github.com/go-playground/validator/v10"
 )
 
@@ -49,7 +51,7 @@ type Item struct {
 
 // Order описывает структуру заказа.
 type Order struct {
-	ID                string    `json:"id" validate:"required,uuid4"`
+	ID                string    `json:"id" validate:"required,uuid4"`                      // Идентификатор заказа
 	OrderUID          string    `json:"order_uid" validate:"required,uuid4"`               // Уникальный идентификатор заказа
 	TrackNumber       *string   `json:"track_number,omitempty" validate:"omitempty,uuid4"` // Номер отслеживания заказа
 	Entry             *string   `json:"entry,omitempty" validate:"omitempty"`              // Точка входа
@@ -69,5 +71,10 @@ type Order struct {
 // Validate выполняет валидацию структуры с использованием библиотеки go-playground/validator.
 func (o *Order) Validate() error {
 	validate := validator.New()
-	return validate.Struct(o)
+	err := validate.Struct(o)
+	if err != nil {
+		// Логирование ошибки валидации
+		log.Printf("Ошибка валидации заказа: %v", err)
+	}
+	return err
 }

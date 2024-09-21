@@ -8,9 +8,17 @@
       }
     },
     "color": {
-      "value": ["#ffffff", "#FFD700", "#ADFF2F"],
+      "value": [
+        "#ffffff",
+        "#FFD700",
+        "#ADFF2F"
+      ],
       "shape": {
-        "type": ["circle", "triangle", "edge"],
+        "type": [
+          "circle",
+          "triangle",
+          "edge"
+        ],
         "stroke": {
           "width": 0,
           "color": "#000000"

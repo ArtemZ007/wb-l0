@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS orders (
+    order_id SERIAL PRIMARY KEY,
+    order_uid VARCHAR(255) NOT NULL UNIQUE,
+    customer_name VARCHAR(255) NOT NULL,
+    order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(50) NOT NULL,
+    total_amount DECIMAL(10, 2) NOT NULL
+);
+

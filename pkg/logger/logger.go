@@ -8,29 +8,35 @@ import (
 
 // Logger определяет интерфейс для логирования.
 type Logger interface {
-	Info(args ...interface{})
-	Warn(args ...interface{})
-	Error(args ...interface{})
-	Fatal(args ...interface{})
-	Debug(args ...interface{})
-	WithField(key string, value interface{}) Logger
-	WithFields(fields map[string]interface{}) Logger
-	WithError(err error) *logrus.Entry
+	Info(args ...interface{})                        // Логирование на уровне Info
+	Warn(args ...interface{})                        // Логирование на уровне Warn
+	Error(args ...interface{})                       // Логирование на уровне Error
+	Fatal(args ...interface{})                       // Логирование на уровне Fatal
+	Debug(args ...interface{})                       // Логирование на уровне Debug
+	WithField(key string, value interface{}) Logger  // Добавление одного поля к записи лога
+	WithFields(fields map[string]interface{}) Logger // Добавление множества полей к записи лога
+	WithError(err error) *logrus.Entry               // Добавление ошибки к записи лога
 }
 
-// LogrusAdapter адаптирует logrus.Logger к интерфейсу Logger.
+// LogrusAdapter оборачивает logrus.Logger для реализации интерфейса Logger.
 type LogrusAdapter struct {
 	logger *logrus.Logger
+}
+
+// NewLogrusAdapter создает новый экземпляр LogrusAdapter.
+func NewLogrusAdapter(logger *logrus.Logger) *LogrusAdapter {
+	return &LogrusAdapter{logger: logger}
 }
 
 // New создает и возвращает новый экземпляр LogrusAdapter, настроенный с уровнем логирования.
 func New(logLevel string) *LogrusAdapter {
 	logger := logrus.New()
 	logger.Formatter = &logrus.TextFormatter{
-		FullTimestamp: true,
+		FullTimestamp: true, // Полные временные метки
 	}
 	logger.Out = os.Stdout
 
+	// Установка уровня логирования
 	level, err := logrus.ParseLevel(logLevel)
 	if err != nil {
 		logger.Warn("Неверно указан уровень логирования, используется уровень по умолчанию: Info")
@@ -56,12 +62,12 @@ func (l *LogrusAdapter) Error(args ...interface{}) {
 	l.logger.Error(args...)
 }
 
-// Fatal логирует сообщение на уровне Fatal и завершает выполнение программы.
+// Fatal логирует сообщение на уровне Fatal и завершает приложение.
 func (l *LogrusAdapter) Fatal(args ...interface{}) {
 	l.logger.Fatal(args...)
 }
 
-// Debug логирует сообщение на уровне Debug.
+// Логирует сообщение на уровне Debug.
 func (l *LogrusAdapter) Debug(args ...interface{}) {
 	l.logger.Debug(args...)
 }

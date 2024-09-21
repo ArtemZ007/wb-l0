@@ -14,22 +14,11 @@ import (
 
 // IOrderService определяет интерфейс для работы с заказами.
 type IOrderService interface {
-	// GetOrder возвращает заказ по его уникальному идентификатору.
 	GetOrder(ctx context.Context, orderUID string) (*model.Order, error)
-
-	// SaveOrder сохраняет заказ в базе данных.
 	SaveOrder(ctx context.Context, order *model.Order) error
-
-	// UpdateOrder обновляет информацию о заказе.
 	UpdateOrder(ctx context.Context, order *model.Order) error
-
-	// DeleteOrder удаляет заказ по его уникальному идентификатору.
 	DeleteOrder(ctx context.Context, orderUID string) error
-
-	// ListOrders возвращает список всех заказов.
 	ListOrders(ctx context.Context) ([]model.Order, error)
-
-	// Start запускает основную логику сервиса в фоновом режиме.
 	Start(ctx context.Context) error
 }
 
@@ -55,6 +44,11 @@ func NewService(db *sql.DB, logger *logrus.Logger) (*Service, error) {
 	return s, nil
 }
 
+// SetCache устанавливает кэш для сервиса.
+func (s *Service) SetCache(cacheService cache.Cache) {
+	s.cache = cacheService
+}
+
 // initDB инициализирует базу данных, выполняя миграции.
 func (s *Service) initDB() error {
 	cwd, err := os.Getwd()
@@ -71,11 +65,6 @@ func (s *Service) initDB() error {
 	}
 
 	return nil
-}
-
-// SetCache устанавливает кэш для сервиса.
-func (s *Service) SetCache(cacheService cache.Cache) {
-	s.cache = cacheService
 }
 
 // executeMigration выполняет миграцию базы данных из указанного файла.
@@ -95,165 +84,122 @@ func (s *Service) executeMigration(filePath string) error {
 	return nil
 }
 
-// ListOrders возвращает список всех заказов из базы данных.
-func (s *Service) ListOrders(ctx context.Context) ([]model.Order, error) {
-	query := `
-        SELECT
-            o.order_uid, o.track_number, o.entry, o.delivery_service, o.shardkey, o.sm_id, o.date_created, o.oof_shard, o.customer_id, o.locale,
-            d.name, d.phone, d.zip, d.city, d.address, d.region, d.email,
-            p.transaction, p.request_id, p.currency, p.provider, p.amount, p.payment_dt, p.bank, p.delivery_cost, p.goods_total, p.custom_fee,
-            i.chrt_id, i.track_number, i.price, i.rid, i.name, i.sale, i.size, i.total_price, i.nm_id, i.brand, i.status
-        FROM
-            ecommerce.orders o
-        LEFT JOIN
-            ecommerce.deliveries d ON o.order_uid = d.id
-        LEFT JOIN
-            ecommerce.payments p ON o.order_uid = p.id
-        LEFT JOIN
-            ecommerce.items i ON o.order_uid = i.id
-    `
+// GetOrder возвращает заказ по его уникальному идентификатору.
+func (s *Service) GetOrder(ctx context.Context, orderUID string) (*model.Order, error) {
+	// Проверка наличия заказа в кэше
+	if s.cache != nil {
+		if cachedOrder, found := s.cache.Get(orderUID); found {
+			s.logger.Info("Заказ найден в кэше", orderUID)
+			return cachedOrder, nil
+		}
+	}
 
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
-		s.logger.WithError(err).Error("Ошибка при выполнении запроса к базе данных")
+	query := "SELECT * FROM orders WHERE order_uid = $1"
+	row := s.db.QueryRowContext(ctx, query, orderUID)
+
+	var order model.Order
+	if err := row.Scan(&order.OrderUID, &order.TrackNumber, &order.Entry, &order.DeliveryService, &order.Shardkey, &order.SMID, &order.DateCreated, &order.OofShard, &order.CustomerID, &order.Locale); err != nil {
+		if err == sql.ErrNoRows {
+			s.logger.WithError(err).Error("Заказ не найден")
+			return nil, nil
+		}
+		s.logger.WithError(err).Error("Ошибка при получении заказа")
 		return nil, err
 	}
-	defer rows.Close()
 
-	orderMap := make(map[string]*model.Order)
-	for rows.Next() {
-		var order model.Order
-		var delivery model.Delivery
-		var payment model.Payment
-		var item model.Item
-
-		err := rows.Scan(
-			&order.OrderUID, &order.TrackNumber, &order.Entry, &order.DeliveryService, &order.Shardkey, &order.SMID, &order.DateCreated, &order.OofShard, &order.CustomerID, &order.Locale,
-			&delivery.Name, &delivery.Phone, &delivery.Zip, &delivery.City, &delivery.Address, &delivery.Region, &delivery.Email,
-			&payment.Transaction, &payment.RequestID, &payment.Currency, &payment.Provider, &payment.Amount, &payment.PaymentDt, &payment.Bank, &payment.DeliveryCost, &payment.GoodsTotal, &payment.CustomFee,
-			&item.ChrtID, &item.TrackNumber, &item.Price, &item.RID, &item.Name, &item.Sale, &item.Size, &item.TotalPrice, &item.NmID, &item.Brand, &item.Status,
-		)
-		if err != nil {
-			s.logger.WithError(err).Error("Ошибка при сканировании строки")
-			return nil, err
-		}
-
-		if existingOrder, exists := orderMap[order.OrderUID]; exists {
-			existingOrder.Items = append(existingOrder.Items, item)
-		} else {
-			order.Delivery = &delivery
-			order.Payment = &payment
-			order.Items = []model.Item{item}
-			orderMap[order.OrderUID] = &order
-		}
+	// Сохранение заказа в кэше
+	if s.cache != nil {
+		s.cache.Set(order.OrderUID, &order)
 	}
 
-	var orders []model.Order
-	for _, order := range orderMap {
-		orders = append(orders, *order)
-	}
-
-	s.logger.Info("Заказы успешно получены из базы данных")
-	return orders, nil
+	s.logger.Info("Заказ успешно получен", order.OrderUID)
+	return &order, nil
 }
 
 // SaveOrder сохраняет заказ в базе данных.
 func (s *Service) SaveOrder(ctx context.Context, order *model.Order) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	query := "INSERT INTO orders (order_uid, track_number, entry, delivery_service, shardkey, sm_id, date_created, oof_shard, customer_id, locale) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
+	_, err := s.db.ExecContext(ctx, query, order.OrderUID, order.TrackNumber, order.Entry, order.DeliveryService, order.Shardkey, order.SMID, order.DateCreated, order.OofShard, order.CustomerID, order.Locale)
 	if err != nil {
-		s.logger.WithError(err).Error("Ошибка при начале транзакции")
+		s.logger.WithError(err).Error("Ошибка при сохранении заказа")
 		return err
 	}
 
-	defer func() {
-		if p := recover(); p != nil {
-			_ = tx.Rollback()
-			s.logger.WithField("panic", p).Error("Паника при сохранении заказа, транзакция отменена")
+	// Сохранение заказа в кэше
+	if s.cache != nil {
+		s.cache.Set(order.OrderUID, order)
+	}
+
+	s.logger.Info("Заказ успешно сохранен", order.OrderUID)
+	return nil
+}
+
+// UpdateOrder обновляет информацию о заказе.
+func (s *Service) UpdateOrder(ctx context.Context, order *model.Order) error {
+	query := "UPDATE orders SET track_number = $2, entry = $3, delivery_service = $4, shardkey = $5, sm_id = $6, date_created = $7, oof_shard = $8, customer_id = $9, locale = $10 WHERE order_uid = $1"
+	_, err := s.db.ExecContext(ctx, query, order.OrderUID, order.TrackNumber, order.Entry, order.DeliveryService, order.Shardkey, order.SMID, order.DateCreated, order.OofShard, order.CustomerID, order.Locale)
+	if err != nil {
+		s.logger.WithError(err).Error("Ошибка при обновлении заказа")
+		return err
+	}
+
+	// Обновление заказа в кэше
+	if s.cache != nil {
+		s.cache.Set(order.OrderUID, order)
+	}
+
+	s.logger.Info("Заказ успешно обновлен", order.OrderUID)
+	return nil
+}
+
+// DeleteOrder удаляет заказ по его уникальному идентификатору.
+func (s *Service) DeleteOrder(ctx context.Context, orderUID string) error {
+	query := "DELETE FROM orders WHERE order_uid = $1"
+	_, err := s.db.ExecContext(ctx, query, orderUID)
+	if err != nil {
+		s.logger.WithError(err).Error("Ошибка при удалении заказа")
+		return err
+	}
+
+	s.logger.Info("Заказ успешно удален", orderUID)
+	return nil
+}
+
+// ListOrders возвращает список всех заказов из базы данных.
+func (s *Service) ListOrders(ctx context.Context) ([]model.Order, error) {
+	query := `
+        SELECT
+            order_uid, track_number, entry, delivery_service, shardkey, sm_id, date_created, oof_shard, customer_id, locale
+        FROM
+            orders`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		s.logger.WithError(err).Error("Ошибка при получении списка заказов")
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []model.Order
+	for rows.Next() {
+		var order model.Order
+		if err := rows.Scan(&order.OrderUID, &order.TrackNumber, &order.Entry, &order.DeliveryService, &order.Shardkey, &order.SMID, &order.DateCreated, &order.OofShard, &order.CustomerID, &order.Locale); err != nil {
+			s.logger.WithError(err).Error("Ошибка при сканировании заказа")
+			return nil, err
 		}
-	}()
-
-	if err := s.saveOrderMainInfo(ctx, tx, order); err != nil {
-		_ = tx.Rollback()
-		return err
+		orders = append(orders, order)
 	}
 
-	if err := s.saveDeliveryInfo(ctx, tx, order); err != nil {
-		_ = tx.Rollback()
-		return err
+	if err := rows.Err(); err != nil {
+		s.logger.WithError(err).Error("Ошибка при итерации по строкам")
+		return nil, err
 	}
 
-	if err := s.savePaymentInfo(ctx, tx, order); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
-	if err := s.saveItemsInfo(ctx, tx, order); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		s.logger.WithError(err).Error("Ошибка при подтверждении транзакции")
-		return err
-	}
-
-	return nil
+	s.logger.Info("Список заказов успешно получен")
+	return orders, nil
 }
 
-// saveOrderMainInfo сохраняет основную информацию о заказе.
-func (s *Service) saveOrderMainInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-	query := `
-        INSERT INTO ecommerce.orders (order_uid, track_number, entry, delivery_service, shardkey, sm_id, date_created, oof_shard, customer_id, locale)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
-	_, err := tx.ExecContext(ctx, query, order.OrderUID, order.TrackNumber, order.Entry, order.DeliveryService, order.Shardkey, order.SMID, order.DateCreated, order.OofShard, order.CustomerID, order.Locale)
-	if err != nil {
-		s.logger.WithError(err).Error("Ошибка при сохранении основной информации о заказе")
-		return err
-	}
-	return nil
-}
-
-// saveDeliveryInfo сохраняет информацию о доставке.
-func (s *Service) saveDeliveryInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-	query := `
-        INSERT INTO ecommerce.deliveries (id, name, phone, zip, city, address, region, email)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `
-	_, err := tx.ExecContext(ctx, query, order.OrderUID, order.Delivery.Name, order.Delivery.Phone, order.Delivery.Zip, order.Delivery.City, order.Delivery.Address, order.Delivery.Region, order.Delivery.Email)
-	if err != nil {
-		s.logger.WithError(err).Error("Ошибка при сохранении информации о доставке")
-		return err
-	}
-	return nil
-}
-
-// savePaymentInfo сохраняет информацию об оплате.
-func (s *Service) savePaymentInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-	query := `
-        INSERT INTO ecommerce.payments (id, transaction, request_id, currency, provider, amount, payment_dt, bank, delivery_cost, goods_total, custom_fee)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
-	_, err := tx.ExecContext(ctx, query, order.OrderUID, order.Payment.Transaction, order.Payment.RequestID, order.Payment.Currency, order.Payment.Provider, order.Payment.Amount, order.Payment.PaymentDt, order.Payment.Bank, order.Payment.DeliveryCost, order.Payment.GoodsTotal, order.Payment.CustomFee)
-	if err != nil {
-		s.logger.WithError(err).Error("Ошибка при сохранении информации об оплате")
-		return err
-	}
-	return nil
-}
-
-// saveItemsInfo сохраняет информацию о товарах в заказе.
-func (s *Service) saveItemsInfo(ctx context.Context, tx *sql.Tx, order *model.Order) error {
-	query := `
-        INSERT INTO ecommerce.items (order_uid, chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
-	for _, item := range order.Items {
-		_, err := tx.ExecContext(ctx, query, order.OrderUID, item.ChrtID, item.TrackNumber, item.Price, item.RID, item.Name, item.Sale, item.Size, item.TotalPrice, item.NmID, item.Brand, item.Status)
-		if err != nil {
-			s.logger.WithError(err).Error("Ошибка при сохранении информации о товаре")
-			return err
-		}
-	}
+// Start запускает основную логику сервиса в фоновом режиме.
+func (s *Service) Start(ctx context.Context) error {
+	s.logger.Info("Сервис успешно запущен")
 	return nil
 }

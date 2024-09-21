@@ -9,10 +9,14 @@ services:
       POSTGRES_PASSWORD: password
     ports:
       - "5432:5432" # Открываем порт для подключения с машины хоста
-
   nats:
     image: nats-streaming:alpine # Используем NATS Streaming Server на Alpine
     ports:
       - 4222:4222
       - 8222:8222
       - 6222:6222
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379" # Открываем порт для подключения с машины хоста

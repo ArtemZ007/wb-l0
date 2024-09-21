@@ -1,7 +1,7 @@
-document.addEventListener('DOMContentLoaded', async function() {
-    // Инициализация particles.js с учетом кэширования.
+document.addEventListener('DOMContentLoaded', async function () {
+    // Инициализация particles.js с учетом кэширова��ия.
     try {
-        particlesJS.load('particles-js', 'particles.json?cacheBuster=' + new Date().getTime(), function() {
+        await particlesJS.load('particles-js', 'static/js/particles.json?cacheBuster=' + new Date().getTime(), function () {
             console.log('callback - Конфигурация particles.js успешно загружена.');
         });
     } catch (error) {
@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         return true;
     }
 
-    form.addEventListener('submit', async function(e) {
+    form.addEventListener('submit', async function (e) {
         e.preventDefault();
 
         // Анимация кнопки

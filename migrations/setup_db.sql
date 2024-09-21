@@ -5,7 +5,7 @@ IF NOT EXISTS (
     WHERE nspname = 'ecommerce'
 ) THEN EXECUTE 'CREATE SCHEMA ecommerce AUTHORIZATION pg_database_owner';
 END IF;
--- Таблица deliveries
+-- Создание таблицы deliveries, если она не существует
 IF NOT EXISTS (
     SELECT 1
     FROM pg_catalog.pg_tables
@@ -24,7 +24,7 @@ IF NOT EXISTS (
     )
 );
 END IF;
--- Таблица payments
+-- Создание таблицы payments, если она не существует
 IF NOT EXISTS (
     SELECT 1
     FROM pg_catalog.pg_tables
@@ -44,7 +44,7 @@ IF NOT EXISTS (
     custom_fee BIGINT NOT NULL CHECK (custom_fee >= 0)
 );
 END IF;
--- Таблица orders
+-- Создание таблицы orders, если она не существует
 IF NOT EXISTS (
     SELECT 1
     FROM pg_catalog.pg_tables
@@ -66,7 +66,7 @@ IF NOT EXISTS (
     oof_shard TEXT
 );
 END IF;
--- Таблица items
+-- Создание таблицы items, если она не существует
 IF NOT EXISTS (
     SELECT 1
     FROM pg_catalog.pg_tables

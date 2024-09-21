@@ -11,9 +11,9 @@ import (
 	"syscall"
 
 	httpQS "github.com/ArtemZ007/wb-l0/internal/delivery/http"
+	"github.com/ArtemZ007/wb-l0/internal/domain/model"
 	"github.com/ArtemZ007/wb-l0/internal/repository/cache"
 	"github.com/ArtemZ007/wb-l0/internal/repository/database"
-	_ "github.com/ArtemZ007/wb-l0/internal/repository/database"
 	"github.com/ArtemZ007/wb-l0/internal/subscription"
 	"github.com/ArtemZ007/wb-l0/pkg/config"
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
@@ -22,33 +22,24 @@ import (
 )
 
 func main() {
-	// Загружаем конфигурацию
 	cfg := loadConfig()
-
-	// Инициализируем логгер
 	log := logger.New(cfg.GetLogLevel())
 
-	// Запускаем приложение
 	if err := runApp(cfg, log); err != nil {
 		log.Fatal("Ошибка запуска приложения: ", err)
 	}
 }
 
-// runApp запускает основное приложение
 func runApp(cfg config.IConfiguration, log logger.Logger) error {
-	// Подключаемся к базе данных
+	// Подключение к базе данных
 	db, err := sql.Open("postgres", cfg.GetDBConnectionString())
 	if err != nil {
 		log.Error("Ошибка подключения к базе данных: ", err)
 		return err
 	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			log.Error("Ошибка при закрытии соединения с базой данных: ", err)
-		}
-	}()
+	defer closeDB(db, log)
 
-	// Проверяем соединение с базой данных
+	// Проверка соединения с базой данных
 	if err := db.Ping(); err != nil {
 		log.Error("Не удалось подключиться к базе данных: ", err)
 		return err
@@ -56,7 +47,7 @@ func runApp(cfg config.IConfiguration, log logger.Logger) error {
 	log.Info("Успешное подключение к базе данных")
 	log.Info("Запуск приложения")
 
-	// Инициализируем сервис базы данных
+	// Инициализация сервиса базы данных
 	dbService, err := database.NewService(db, logrus.New())
 	if err != nil {
 		log.Error("Ошибка создания сервиса базы данных: ", err)
@@ -64,58 +55,48 @@ func runApp(cfg config.IConfiguration, log logger.Logger) error {
 	}
 	log.Info("Сервис базы данных инициализирован")
 
-	// Инициализируем сервис кэша
-	cacheService := cache.NewService(cfg.GetRedisAddr(), cfg.GetRedisPassword(), cfg.GetRedisDB(), log)
-	if cacheService == nil {
-		log.Error("Не удалось создать сервис кэша")
-		return errors.New("не удалось создать сервис кэша")
+	// Инициализация сервиса кэша
+	cacheService, err := initCacheService(cfg, log)
+	if err != nil {
+		log.Error("Ошибка инициализации сервиса кэша: ", err)
+		return err
 	}
 	log.Info("Сервис кэша инициализирован")
 
-	// Устанавливаем сервис базы данных для кэша
+	// Установка сервиса базы данных в сервис кэша
 	cacheService.SetDBService(dbService)
 
-	// Инициализируем кэш данными из базы данных
+	// Инициализация кэша данными из базы данных
 	ctx := context.Background()
 	if err := cacheService.InitCacheWithDBOrders(ctx); err != nil {
 		log.Error("Ошибка инициализации кэша данными из базы данных: ", err)
 		return err
 	}
 
-	// Инициализируем HTTP обработчик
-	logger := logrus.New() // Убедитесь, что здесь используется ваша инициализация логгера
-	handler := httpQS.NewHandler(cacheService, logger)
-	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
-		Handler: handler,
-	}
+	// Обертка для сервиса кэша
+	cacheServiceWrapper := &CacheServiceWrapper{cacheService: cacheService}
 
-	// Запускаем HTTP сервер в отдельной горутине
-	go func() {
-		log.Info("HTTP сервер запущен на порту ", cfg.GetServerPort())
-		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			log.Error("Ошибка HTTP сервера: ", err)
-		}
-	}()
+	// Инициализация HTTP хендлера
+	handler := httpQS.NewHandler(cacheServiceWrapper, log)
+	server := initHTTPServer(cfg, handler)
 
-	// Инициализируем NATS слушатель
+	// Запуск HTTP сервера в отдельной горутине
+	go startHTTPServer(server, log)
+
+	// Инициализация NATS слушателя
 	natsListener, err := subscription.NewListener(cfg.GetNATSURL(), cfg.GetNATSClusterID(), cfg.GetNATSClientID(), cacheService, dbService, log)
 	if err != nil {
 		log.Error("Ошибка инициализации NATS слушателя: ", err)
 		return err
 	}
 
-	// Запускаем NATS слушатель в отдельной горутине
-	go func() {
-		if err := natsListener.Start(ctx); err != nil {
-			log.Error("Ошибка NATS слушателя: ", err)
-		}
-	}()
+	// Запуск NATS слушателя в отдельной горутине
+	go startNATSListener(natsListener, ctx, log)
 
-	// Ожидаем сигнал завершения работы
+	// Ожидание сигнала завершения работы
 	<-waitForShutdownSignal(log)
 
-	// Завершаем работу HTTP сервера
+	// Завершение работы HTTP сервера
 	if err := server.Shutdown(context.Background()); err != nil {
 		log.Error("Ошибка завершения работы HTTP сервера: ", err)
 	}
@@ -123,7 +104,65 @@ func runApp(cfg config.IConfiguration, log logger.Logger) error {
 	return nil
 }
 
-// waitForShutdownSignal ожидает сигнал завершения работы и возвращает канал, который закрывается при получении сигнала
+// closeDB закрывает соединение с базой данных
+func closeDB(db *sql.DB, log logger.Logger) {
+	if err := db.Close(); err != nil {
+		log.Error("Ошибка при закрытии соединения с базой данных: ", err)
+	}
+}
+
+// initCacheService инициализирует сервис кэша
+func initCacheService(cfg config.IConfiguration, log logger.Logger) (*cache.CacheService, error) {
+	logrusLogger := logrus.New()
+	logWrapper := logger.NewLogrusAdapter(logrusLogger)
+	cacheService := cache.NewCacheService(cfg.GetRedisAddr(), cfg.GetRedisPassword(), cfg.GetRedisDB(), logWrapper)
+	if cacheService == nil {
+		log.Error("Не удалось создать сервис кэша")
+		return nil, errors.New("не удалось создать сервис кэша")
+	}
+	log.Info("Сервис кэша успешно создан")
+	return cacheService, nil
+}
+
+// initHTTPServer инициализирует HTTP сервер
+func initHTTPServer(cfg config.IConfiguration, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.GetServerPort()),
+		Handler: handler,
+	}
+}
+
+// startHTTPServer запускает HTTP сервер
+func startHTTPServer(server *http.Server, log logger.Logger) {
+	log.Info("HTTP сервер запущен на порту ", server.Addr)
+	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		log.Error("Ошибка HTTP сервера: ", err)
+	}
+}
+
+// startNATSListener запускает NATS слушателя
+func startNATSListener(listener *subscription.Listener, ctx context.Context, log logger.Logger) {
+	if err := listener.Start(ctx); err != nil {
+		log.Error("Ошибка NATS слушателя: ", err)
+	}
+}
+
+// CacheServiceWrapper оборачивает cache.CacheService для реализации интерфейса httpQS.DataService
+type CacheServiceWrapper struct {
+	cacheService *cache.CacheService
+}
+
+// GetData метод для CacheServiceWrapper
+func (w *CacheServiceWrapper) GetData() ([]model.Order, bool) {
+	return w.cacheService.GetData()
+}
+
+// GetOrder метод для CacheServiceWrapper
+func (w *CacheServiceWrapper) GetOrder(orderUID string) (*model.Order, error) {
+	return w.cacheService.GetOrder(context.Background(), orderUID)
+}
+
+// waitForShutdownSignal ожидает сигнала завершения работы
 func waitForShutdownSignal(log logger.Logger) <-chan struct{} {
 	stop := make(chan struct{})
 	go func() {

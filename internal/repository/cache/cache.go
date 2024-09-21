@@ -4,22 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"github.com/ArtemZ007/wb-l0/internal/domain/model"
 	"github.com/ArtemZ007/wb-l0/pkg/logger"
 	"github.com/go-redis/redis/v8"
 )
 
-// Cache определяет методы для операций с кэшем.
+// Cache определяет интерфейс для сервиса кэша.
 type Cache interface {
-	GetOrder(id string) (*model.Order, bool)
-	GetAllOrderIDs() []string
-	AddOrUpdateOrder(order *model.Order) error
-	GetData() ([]model.Order, bool)
-	UpdateOrder(ctx context.Context, order *model.Order) error
-	GetOrderByID(ctx context.Context, orderUID string) (*model.Order, error)
-	InitCacheWithDBOrders(ctx context.Context) error
+	Get(key string) (*model.Order, bool)
+	Set(key string, value *model.Order)
+	Delete(key string)
 }
 
 // OrderService определяет методы для операций с заказами.
@@ -27,37 +22,34 @@ type OrderService interface {
 	ListOrders(ctx context.Context) ([]model.Order, error)
 }
 
-// Service представляет собой сервис кэша.
-type Service struct {
+// CacheService представляет собой сервис кэша.
+type CacheService struct {
 	client    *redis.Client
 	logger    logger.Logger
 	dbService OrderService
-	orderChan chan *model.Order
-	mu        sync.RWMutex
 }
 
-// NewService создает и возвращает новый экземпляр Service.
-func NewService(redisAddr, redisPassword string, redisDB int, logger logger.Logger) *Service {
+// NewCacheService создает и возвращает новый экземпляр CacheService.
+func NewCacheService(redisAddr, redisPassword string, redisDB int, logger logger.Logger) *CacheService {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Password: redisPassword,
 		DB:       redisDB,
 	})
 
-	return &Service{
-		client:    rdb,
-		logger:    logger,
-		orderChan: make(chan *model.Order),
+	return &CacheService{
+		client: rdb,
+		logger: logger,
 	}
 }
 
 // SetDBService устанавливает сервис базы данных, реализующий интерфейс OrderService.
-func (s *Service) SetDBService(dbService OrderService) {
+func (s *CacheService) SetDBService(dbService OrderService) {
 	s.dbService = dbService
 }
 
 // InitCacheWithDBOrders инициализирует кэш заказами из базы данных.
-func (s *Service) InitCacheWithDBOrders(ctx context.Context) error {
+func (s *CacheService) InitCacheWithDBOrders(ctx context.Context) error {
 	orders, err := s.dbService.ListOrders(ctx)
 	if err != nil {
 		s.logger.Error("Ошибка при получении заказов из базы данных", map[string]interface{}{"error": err})
@@ -75,36 +67,36 @@ func (s *Service) InitCacheWithDBOrders(ctx context.Context) error {
 }
 
 // GetOrder извлекает заказ из кэша по его уникальному идентификатору.
-func (s *Service) GetOrder(id string) (*model.Order, bool) {
-	orderData, err := s.client.Get(context.Background(), id).Result()
+func (s *CacheService) GetOrder(ctx context.Context, orderUID string) (*model.Order, error) {
+	orderData, err := s.client.Get(ctx, orderUID).Result()
 	if err == redis.Nil {
-		return nil, false
+		return nil, fmt.Errorf("заказ с UID %s не найден в кэше", orderUID)
 	} else if err != nil {
 		s.logger.Error("Ошибка при получении заказа из Redis", map[string]interface{}{"error": err})
-		return nil, false
+		return nil, err
 	}
 
 	var order model.Order
 	if err := json.Unmarshal([]byte(orderData), &order); err != nil {
 		s.logger.Error("Ошибка при декодировании заказа из Redis", map[string]interface{}{"error": err})
-		return nil, false
+		return nil, err
 	}
 
-	return &order, true
+	return &order, nil
 }
 
 // GetAllOrderIDs возвращает все уникальные идентификаторы заказов.
-func (s *Service) GetAllOrderIDs() []string {
-	keys, err := s.client.Keys(context.Background(), "*").Result()
+func (s *CacheService) GetAllOrderIDs(ctx context.Context) ([]string, error) {
+	keys, err := s.client.Keys(ctx, "*").Result()
 	if err != nil {
 		s.logger.Error("Ошибка при получении всех ключей из Redis", map[string]interface{}{"error": err})
-		return nil
+		return nil, err
 	}
-	return keys
+	return keys, nil
 }
 
 // AddOrUpdateOrder добавляет или обновляет заказ в кэше.
-func (s *Service) AddOrUpdateOrder(order *model.Order) error {
+func (s *CacheService) AddOrUpdateOrder(order *model.Order) error {
 	orderData, err := json.Marshal(order)
 	if err != nil {
 		s.logger.Error("Ошибка при сериализации заказа", map[string]interface{}{"error": err})
@@ -120,8 +112,9 @@ func (s *Service) AddOrUpdateOrder(order *model.Order) error {
 }
 
 // GetData возвращает все заказы из кэша.
-func (s *Service) GetData() ([]model.Order, bool) {
-	keys, err := s.client.Keys(context.Background(), "*").Result()
+func (s *CacheService) GetData() ([]model.Order, bool) {
+	ctx := context.Background()
+	keys, err := s.client.Keys(ctx, "*").Result()
 	if err != nil {
 		s.logger.Error("Ошибка при получении всех ключей из Redis", map[string]interface{}{"error": err})
 		return nil, false
@@ -129,7 +122,7 @@ func (s *Service) GetData() ([]model.Order, bool) {
 
 	var orders []model.Order
 	for _, key := range keys {
-		orderData, err := s.client.Get(context.Background(), key).Result()
+		orderData, err := s.client.Get(ctx, key).Result()
 		if err != nil {
 			s.logger.Error("Ошибка при получении заказа из Redis", map[string]interface{}{"error": err})
 			continue
@@ -148,18 +141,4 @@ func (s *Service) GetData() ([]model.Order, bool) {
 		return nil, false
 	}
 	return orders, true
-}
-
-// UpdateOrder обновляет заказ в кэше.
-func (s *Service) UpdateOrder(ctx context.Context, order *model.Order) error {
-	return s.AddOrUpdateOrder(order)
-}
-
-// GetOrderByID возвращает заказ из кэша по его уникальному идентификатору.
-func (s *Service) GetOrderByID(ctx context.Context, orderUID string) (*model.Order, error) {
-	order, exists := s.GetOrder(orderUID)
-	if !exists {
-		return nil, fmt.Errorf("заказ с UID %s не найден в кэше", orderUID)
-	}
-	return order, nil
 }
